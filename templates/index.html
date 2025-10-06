@@ -66,6 +66,13 @@
       .order-list ul {
         padding-left: 1.25rem;
       }
+      .hint {
+        background: #e7f5ff;
+        border-left: 4px solid #0b7285;
+        padding: 0.75rem 1rem;
+        border-radius: 4px;
+        margin-top: 1rem;
+      }
     </style>
   </head>
   <body>
@@ -74,6 +81,10 @@
       Upload a ZIP archive containing Word documents. After selecting the order, the
       system will convert the documents to PDF, merge them, and email the final PDF to
       the specified address.
+    </p>
+    <p class="hint">
+      When the ZIP archive includes team folders (such as R班, N班, or S班), the documents will be
+      automatically labelled with their team so you can organise them more easily when arranging the order.
     </p>
 
     {% with messages = get_flashed_messages() %}

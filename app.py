@@ -7,7 +7,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List
 
 from dotenv import load_dotenv
@@ -45,6 +45,7 @@ class ZipEntry:
     identifier: str
     display_name: str
     archive_name: str
+    team_name: str | None = None
 
 
 class OrderManager:
@@ -118,9 +119,48 @@ upload_sessions: Dict[str, Dict[str, ZipEntry]] = {}
 EMAIL_CONFIG = EmailConfig.from_env()
 
 
+def _infer_team_directory_level(paths: List[PurePosixPath]) -> int | None:
+    directories = [path.parts[:-1] for path in paths]
+    max_depth = max((len(parts) for parts in directories), default=0)
+    for level in range(max_depth):
+        names = {parts[level] for parts in directories if len(parts) > level}
+        if len(names) > 1:
+            return level
+    return None
+
+
+def _append_duplicate_suffix(base_name: str, counter: int) -> str:
+    path = Path(base_name)
+    return f"{path.stem} ({counter}){path.suffix}"
+
+
+def _build_display_name(
+    original_name: str,
+    team_name: str | None,
+    duplicate_counter: Dict[str, int],
+) -> str:
+    base_name = Path(original_name).name
+    if team_name:
+        prefix = f"[{team_name}] "
+        if base_name.startswith(prefix):
+            prefixed_name = base_name
+        else:
+            prefixed_name = f"{prefix}{base_name}"
+    else:
+        prefixed_name = base_name
+
+    key = prefixed_name.lower()
+    duplicate_counter[key] = duplicate_counter.get(key, 0) + 1
+    occurrence = duplicate_counter[key]
+    if occurrence == 1:
+        return prefixed_name
+    return _append_duplicate_suffix(prefixed_name, occurrence)
+
+
 def _extract_entries(zip_path: Path) -> List[ZipEntry]:
     entries: List[ZipEntry] = []
-    duplicate_counter: Dict[str, int] = {}
+    word_infos: List[tuple[zipfile.ZipInfo, PurePosixPath]] = []
+
     with zipfile.ZipFile(zip_path) as archive:
         for info in archive.infolist():
             if info.is_dir():
@@ -128,20 +168,49 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
             suffix = Path(info.filename).suffix.lower()
             if suffix not in {".doc", ".docx"}:
                 continue
-            base_name = Path(info.filename).name
-            duplicate_counter[base_name] = duplicate_counter.get(base_name, 0) + 1
-            display_name = base_name
-            if duplicate_counter[base_name] > 1:
-                display_name = f"{base_name} ({duplicate_counter[base_name]})"
-            entries.append(
-                ZipEntry(
-                    identifier=str(uuid.uuid4()),
-                    display_name=display_name,
-                    archive_name=info.filename,
-                )
+            word_infos.append((info, PurePosixPath(info.filename)))
+
+    if not word_infos:
+        return entries
+
+    team_level = _infer_team_directory_level([path for _, path in word_infos])
+    duplicate_counter: Dict[str, int] = {}
+
+    for info, path in word_infos:
+        directories = path.parts[:-1]
+        team_name: str | None = None
+        if team_level is not None and len(directories) > team_level:
+            team_name = directories[team_level]
+
+        display_name = _build_display_name(path.name, team_name, duplicate_counter)
+
+        entries.append(
+            ZipEntry(
+                identifier=str(uuid.uuid4()),
+                display_name=display_name,
+                archive_name=str(path),
+                team_name=team_name,
             )
+        )
+
     return entries
 
+
+def _apply_team_prefixes(extract_dir: Path, entries: Dict[str, ZipEntry]) -> None:
+    for entry in entries.values():
+        if not entry.team_name:
+            continue
+
+        source_path = extract_dir / Path(entry.archive_name)
+        if not source_path.exists():
+            continue
+
+        target_path = source_path.with_name(entry.display_name)
+        if target_path != source_path:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.rename(target_path)
+
+        entry.archive_name = str(target_path.relative_to(extract_dir).as_posix())
 
 def _create_job_state(job_id: str, email: str, order: List[str], zip_path: Path, entry_map: Dict[str, ZipEntry]) -> JobState:
     now = datetime.utcnow()
@@ -188,6 +257,8 @@ def _process_job(job_id: str) -> None:
 
         with zipfile.ZipFile(job.zip_path) as archive:
             archive.extractall(path=extract_dir)
+
+        _apply_team_prefixes(extract_dir, job.entries)
 
         ordered_entries: List[ZipEntry] = []
         for display_name in job.order:
@@ -265,11 +336,37 @@ def prepare_upload() -> Response | str:
     ordered_display_names = order_manager.initial_order([entry.display_name for entry in entries])
     upload_sessions[job_id] = entry_map
 
+    team_counts: Dict[str, int] = {}
+    team_order: List[str] = []
+    ungrouped_count = 0
+    for display_name in ordered_display_names:
+        entry = entry_map.get(display_name)
+        if not entry:
+            continue
+        if entry.team_name:
+            team_counts[entry.team_name] = team_counts.get(entry.team_name, 0) + 1
+            if entry.team_name not in team_order:
+                team_order.append(entry.team_name)
+        else:
+            ungrouped_count += 1
+
+    team_summaries = [
+        {"name": team_name, "count": team_counts[team_name]}
+        for team_name in team_order
+    ]
+    if team_order and ungrouped_count:
+        team_summaries.append({"name": None, "count": ungrouped_count})
+
     return render_template(
         "order.html",
         job_id=job_id,
         email=email,
         ordered_display_names=ordered_display_names,
+        entry_map=entry_map,
+        team_summaries=team_summaries,
+        team_names=team_order,
+        has_teams=bool(team_order),
+        ungrouped_count=ungrouped_count,
     )
 
 

@@ -19,15 +19,68 @@
         padding: 1.5rem;
         background: #f8fafc;
       }
+      .team-summary {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 1rem;
+        background: #fff;
+        margin-bottom: 1.5rem;
+      }
+      .team-summary h2 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1.1rem;
+      }
+      .team-summary p {
+        margin-top: 0;
+        margin-bottom: 0.75rem;
+      }
+      .team-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .team-pill {
+        border: 1px solid #0b7285;
+        background: #e3fafc;
+        color: #0b7285;
+        padding: 0.35rem 0.75rem;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .team-pill:hover {
+        background: #c5f6fa;
+      }
+      .team-pill.ungrouped {
+        border-color: #495057;
+        color: #495057;
+        background: #f1f3f5;
+      }
       select {
         width: 100%;
         min-height: 260px;
         font-size: 1rem;
       }
+      .team-filter {
+        margin-top: 1rem;
+      }
+      .team-filter label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-weight: bold;
+      }
+      .team-filter select {
+        width: auto;
+        min-height: auto;
+      }
       .controls {
         margin-top: 1rem;
         display: flex;
         gap: 0.5rem;
+        flex-wrap: wrap;
       }
       button {
         background-color: #0b7285;
@@ -53,6 +106,24 @@
       will be saved and used as the default the next time you upload a report.
     </p>
 
+    {% if team_summaries %}
+      <div class="team-summary">
+        <h2>Detected teams</h2>
+        <p>Select a team to jump to the first document. Use “Group by team” to sort the list.</p>
+        <div class="team-list">
+          {% for summary in team_summaries %}
+            <button
+              type="button"
+              class="team-pill{% if not summary.name %} ungrouped{% endif %}"
+              onclick="focusTeam({{ (summary.name if summary.name else '__ungrouped__') | tojson }})"
+            >
+              {{ summary.name if summary.name else 'Ungrouped' }} · {{ summary.count }}
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+    {% endif %}
+
     <div class="container">
       <form action="{{ url_for('start_processing') }}" method="post" id="order-form">
         <input type="hidden" name="job_id" value="{{ job_id }}" />
@@ -62,13 +133,35 @@
         <label for="file-order">Document order</label>
         <select id="file-order" size="10" multiple>
           {% for name in ordered_display_names %}
-            <option value="{{ name }}" selected>{{ name }}</option>
+            {% set entry = entry_map[name] %}
+            <option value="{{ name }}" data-team="{{ entry.team_name or '' }}" selected>
+              {{ name }}
+            </option>
           {% endfor %}
         </select>
+
+        {% if has_teams %}
+          <div class="team-filter">
+            <label for="team-filter">Highlight documents for a specific team</label>
+            <select id="team-filter">
+              <option value="">All teams</option>
+              {% for name in team_names %}
+                <option value="{{ name }}">{{ name }}</option>
+              {% endfor %}
+              {% if ungrouped_count %}
+                <option value="__ungrouped__">Ungrouped</option>
+              {% endif %}
+            </select>
+          </div>
+        {% endif %}
 
         <div class="controls">
           <button type="button" class="secondary" onclick="move(-1)">Move up</button>
           <button type="button" class="secondary" onclick="move(1)">Move down</button>
+          {% if has_teams %}
+            <button type="button" class="secondary" onclick="groupByTeam()">Group by team</button>
+          {% endif %}
+          <button type="button" class="secondary" onclick="resetToOriginal()">Reset order</button>
           <button type="submit">Start background processing</button>
         </div>
       </form>
@@ -78,6 +171,8 @@
       const select = document.getElementById("file-order");
       const orderInput = document.getElementById("order-input");
       const form = document.getElementById("order-form");
+      const initialOrder = Array.from(select.options).map((option) => option.value);
+      const teamFilter = document.getElementById("team-filter");
 
       function move(direction) {
         const selectedIndex = select.selectedIndex;
@@ -93,11 +188,57 @@
         const [moved] = options.splice(selectedIndex, 1);
         options.splice(newIndex, 0, moved);
 
-        select.innerHTML = "";
-        for (const option of options) {
-          select.appendChild(option);
-        }
+        setOptions(options);
         select.selectedIndex = newIndex;
+      }
+
+      function setOptions(options) {
+        const fragment = document.createDocumentFragment();
+        for (const option of options) {
+          fragment.appendChild(option);
+        }
+        select.innerHTML = "";
+        select.appendChild(fragment);
+      }
+
+      function resetToOriginal() {
+        const optionByValue = new Map(Array.from(select.options).map((option) => [option.value, option]));
+        const ordered = initialOrder.map((value) => optionByValue.get(value)).filter(Boolean);
+        setOptions(ordered);
+        if (ordered.length) {
+          select.selectedIndex = 0;
+        }
+      }
+
+      function groupByTeam() {
+        const collator = new Intl.Collator("ja");
+        const options = Array.from(select.options);
+        options.sort((a, b) => {
+          const teamA = a.dataset.team || "";
+          const teamB = b.dataset.team || "";
+          if (teamA === teamB) {
+            return collator.compare(a.textContent, b.textContent);
+          }
+          return collator.compare(teamA, teamB);
+        });
+        setOptions(options);
+        select.selectedIndex = options.length ? 0 : -1;
+      }
+
+      function focusTeam(teamName) {
+        const options = Array.from(select.options);
+        const normalisedTeam = teamName === "__ungrouped__" ? "" : teamName;
+        const targetIndex = options.findIndex((option) => (option.dataset.team || "") === normalisedTeam);
+        if (targetIndex >= 0) {
+          select.selectedIndex = targetIndex;
+          select.focus();
+        }
+      }
+
+      if (teamFilter) {
+        teamFilter.addEventListener("change", () => {
+          focusTeam(teamFilter.value);
+        });
       }
 
       function updateOrderInput() {
