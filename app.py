@@ -22,8 +22,8 @@ from flask import (
     url_for,
 )
 
-from PDFMerge import merge_pdfs
-from WordToPDFConverter import convert_word_to_pdf
+from pdf_merge import merge_pdfs
+from word_to_pdf_converter import convert_word_to_pdf
 from email_service import EmailConfig, send_email_with_attachment
 
 
