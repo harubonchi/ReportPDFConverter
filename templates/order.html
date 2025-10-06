@@ -64,18 +64,6 @@
         min-height: 260px;
         font-size: 1rem;
       }
-      .team-filter {
-        margin-top: 1rem;
-      }
-      .team-filter label {
-        display: block;
-        margin-bottom: 0.35rem;
-        font-weight: bold;
-      }
-      .team-filter select {
-        width: auto;
-        min-height: auto;
-      }
       .controls {
         margin-top: 1rem;
         display: flex;
@@ -109,7 +97,7 @@
     {% if team_summaries %}
       <div class="team-summary">
         <h2>Detected teams</h2>
-        <p>Select a team to jump to the first document. Use “Group by team” to sort the list.</p>
+        <p>Select a team to jump to the first document. Use the team controls below to adjust their order.</p>
         <div class="team-list">
           {% for summary in team_summaries %}
             <button
@@ -140,26 +128,12 @@
           {% endfor %}
         </select>
 
-        {% if has_teams %}
-          <div class="team-filter">
-            <label for="team-filter">Highlight documents for a specific team</label>
-            <select id="team-filter">
-              <option value="">All teams</option>
-              {% for name in team_names %}
-                <option value="{{ name }}">{{ name }}</option>
-              {% endfor %}
-              {% if ungrouped_count %}
-                <option value="__ungrouped__">Ungrouped</option>
-              {% endif %}
-            </select>
-          </div>
-        {% endif %}
-
         <div class="controls">
           <button type="button" class="secondary" onclick="move(-1)">Move up</button>
           <button type="button" class="secondary" onclick="move(1)">Move down</button>
           {% if has_teams %}
-            <button type="button" class="secondary" onclick="groupByTeam()">Group by team</button>
+            <button type="button" class="secondary" onclick="moveTeamBy(-1)">Move team up</button>
+            <button type="button" class="secondary" onclick="moveTeamBy(1)">Move team down</button>
           {% endif %}
           <button type="button" class="secondary" onclick="resetToOriginal()">Reset order</button>
           <button type="submit">Start background processing</button>
@@ -172,7 +146,6 @@
       const orderInput = document.getElementById("order-input");
       const form = document.getElementById("order-form");
       const initialOrder = Array.from(select.options).map((option) => option.value);
-      const teamFilter = document.getElementById("team-filter");
 
       function move(direction) {
         const selectedIndex = select.selectedIndex;
@@ -210,19 +183,53 @@
         }
       }
 
-      function groupByTeam() {
-        const collator = new Intl.Collator("ja");
+      function moveTeamBy(direction) {
+        const selectedOption = select.options[select.selectedIndex];
+        if (!selectedOption) {
+          return;
+        }
+
+        const selectedTeam = selectedOption.dataset.team || "";
         const options = Array.from(select.options);
-        options.sort((a, b) => {
-          const teamA = a.dataset.team || "";
-          const teamB = b.dataset.team || "";
-          if (teamA === teamB) {
-            return collator.compare(a.textContent, b.textContent);
+        const teamOrder = [];
+        const teamOptionsMap = new Map();
+
+        for (const option of options) {
+          const team = option.dataset.team || "";
+          if (!teamOptionsMap.has(team)) {
+            teamOptionsMap.set(team, []);
+            teamOrder.push(team);
           }
-          return collator.compare(teamA, teamB);
-        });
-        setOptions(options);
-        select.selectedIndex = options.length ? 0 : -1;
+          teamOptionsMap.get(team).push(option);
+        }
+
+        const currentIndex = teamOrder.indexOf(selectedTeam);
+        if (currentIndex < 0) {
+          return;
+        }
+
+        const newIndex = currentIndex + direction;
+        if (newIndex < 0 || newIndex >= teamOrder.length) {
+          return;
+        }
+
+        const [team] = teamOrder.splice(currentIndex, 1);
+        teamOrder.splice(newIndex, 0, team);
+
+        const ordered = teamOrder.flatMap((teamName) => teamOptionsMap.get(teamName) || []);
+        setOptions(ordered);
+
+        const selectedTeamOptions = teamOptionsMap.get(selectedTeam) || [];
+        const firstValue = selectedTeamOptions.length ? selectedTeamOptions[0].value : null;
+        if (!firstValue) {
+          return;
+        }
+
+        const nextIndex = ordered.findIndex((option) => option.value === firstValue);
+        if (nextIndex >= 0) {
+          select.selectedIndex = nextIndex;
+          select.focus();
+        }
       }
 
       function focusTeam(teamName) {
@@ -233,12 +240,6 @@
           select.selectedIndex = targetIndex;
           select.focus();
         }
-      }
-
-      if (teamFilter) {
-        teamFilter.addEventListener("change", () => {
-          focusTeam(teamFilter.value);
-        });
       }
 
       function updateOrderInput() {
