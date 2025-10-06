@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Processing status</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2rem auto;
+        max-width: 720px;
+        color: #1f2933;
+      }
+      h1 {
+        color: #0b7285;
+      }
+      .status-box {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 1.5rem;
+        background: #f8fafc;
+      }
+      .status-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+      }
+      .status-message {
+        margin-top: 0.5rem;
+        font-style: italic;
+      }
+      .completed {
+        color: #2b8a3e;
+      }
+      .failed {
+        color: #c92a2a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Background job status</h1>
+    <p>
+      The job identifier is <strong>{{ job_id }}</strong>. This page will refresh automatically
+      until the process completes.
+    </p>
+
+    <div class="status-box">
+      <div id="status" class="status-value">Loading…</div>
+      <div id="message" class="status-message"></div>
+      <div id="timestamp"></div>
+    </div>
+
+    <script>
+      const statusUrl = "{{ url_for('job_status', job_id=job_id) }}";
+
+      async function refreshStatus() {
+        try {
+          const response = await fetch(statusUrl);
+          if (!response.ok) {
+            throw new Error("Unable to fetch status");
+          }
+          const data = await response.json();
+          const statusElement = document.getElementById("status");
+          const messageElement = document.getElementById("message");
+          const timestampElement = document.getElementById("timestamp");
+
+          statusElement.textContent = data.status;
+          statusElement.className = "status-value " + data.status;
+          messageElement.textContent = data.message || "";
+          timestampElement.textContent = "Updated: " + new Date(data.updated_at).toLocaleString();
+
+          if (data.status === "completed" || data.status === "failed") {
+            return;
+          }
+        } catch (error) {
+          document.getElementById("status").textContent = "Error";
+          document.getElementById("message").textContent = error;
+        }
+        setTimeout(refreshStatus, 3000);
+      }
+
+      refreshStatus();
+    </script>
+  </body>
+</html>

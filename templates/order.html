@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Arrange Document Order</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2rem auto;
+        max-width: 720px;
+        color: #1f2933;
+      }
+      h1 {
+        color: #0b7285;
+      }
+      .container {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 1.5rem;
+        background: #f8fafc;
+      }
+      select {
+        width: 100%;
+        min-height: 260px;
+        font-size: 1rem;
+      }
+      .controls {
+        margin-top: 1rem;
+        display: flex;
+        gap: 0.5rem;
+      }
+      button {
+        background-color: #0b7285;
+        border: none;
+        color: white;
+        padding: 0.6rem 1.2rem;
+        font-size: 1rem;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: #495057;
+      }
+      button:hover {
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Arrange the document order</h1>
+    <p>
+      Use the controls below to choose the order of the Word documents. The selected order
+      will be saved and used as the default the next time you upload a report.
+    </p>
+
+    <div class="container">
+      <form action="{{ url_for('start_processing') }}" method="post" id="order-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}" />
+        <input type="hidden" name="email" value="{{ email }}" />
+        <input type="hidden" name="order" id="order-input" />
+
+        <label for="file-order">Document order</label>
+        <select id="file-order" size="10" multiple>
+          {% for name in ordered_display_names %}
+            <option value="{{ name }}" selected>{{ name }}</option>
+          {% endfor %}
+        </select>
+
+        <div class="controls">
+          <button type="button" class="secondary" onclick="move(-1)">Move up</button>
+          <button type="button" class="secondary" onclick="move(1)">Move down</button>
+          <button type="submit">Start background processing</button>
+        </div>
+      </form>
+    </div>
+
+    <script>
+      const select = document.getElementById("file-order");
+      const orderInput = document.getElementById("order-input");
+      const form = document.getElementById("order-form");
+
+      function move(direction) {
+        const selectedIndex = select.selectedIndex;
+        if (selectedIndex < 0) {
+          return;
+        }
+        const newIndex = selectedIndex + direction;
+        if (newIndex < 0 || newIndex >= select.options.length) {
+          return;
+        }
+
+        const options = Array.from(select.options);
+        const [moved] = options.splice(selectedIndex, 1);
+        options.splice(newIndex, 0, moved);
+
+        select.innerHTML = "";
+        for (const option of options) {
+          select.appendChild(option);
+        }
+        select.selectedIndex = newIndex;
+      }
+
+      function updateOrderInput() {
+        const values = Array.from(select.options).map((option) => option.value);
+        orderInput.value = values.join("|");
+      }
+
+      form.addEventListener("submit", (event) => {
+        updateOrderInput();
+        if (!orderInput.value) {
+          event.preventDefault();
+          alert("Please select at least one document.");
+        }
+      });
+    </script>
+  </body>
+</html>
