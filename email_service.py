@@ -22,12 +22,12 @@ class EmailConfig:
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
-        sender = os.getenv("EMAIL_SENDER", "")
-        username = os.getenv("SMTP_USERNAME", sender)
-        password = os.getenv("SMTP_PASSWORD", "")
-        smtp_server = os.getenv("SMTP_SERVER", "")
-        smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        use_tls = os.getenv("SMTP_USE_TLS", "true").lower() != "false"
+        sender = 'harubonchi@gmail.com'
+        username = 'harubonchi@gmail.com'
+        password = 'zuaa oqrg star rtcx'
+        smtp_server = 'smtp.gmail.com'
+        smtp_port = 587
+        use_tls = 'true'
         return cls(
             sender=sender,
             username=username,
