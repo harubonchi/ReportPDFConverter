@@ -68,7 +68,7 @@ def _cleanup_data_directories() -> None:
         directory.mkdir(parents=True, exist_ok=True)
 
 
-def _schedule_delayed_cleanup(delay_seconds: int = 60) -> None:
+def _schedule_delayed_cleanup(delay_seconds: int = 600) -> None:
     """Schedule a cleanup of generated files after the specified delay."""
 
     def _cleanup_task() -> None:
