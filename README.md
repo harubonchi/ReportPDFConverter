@@ -22,28 +22,24 @@
    ```bash
    pip install -r requirements.txt
    ```
-2. 環境変数を設定します。「環境変数の設定」項目に記述している内容をテキストファイルにコピペし、メールサーバの認証情報を設定したら.env(拡張子なし)というファイル名で保存してください。.envファイルはapp.pyと同じディレクトリに配置してください。
+2. 環境変数を設定します。以下の内容をテキストファイルにコピペし、メールサーバの認証情報を設定したら.env(拡張子なし)というファイル名で保存してください。
+   ```
+   EMAIL_SENDER=example@example.com
+   EMAIL_USERNAME=example@example.com
+   EMAIL_PASSWORD=your-password
+   EMAIL_SMTP_SERVER=smtp.example.com
+   EMAIL_SMTP_PORT=587
+   EMAIL_USE_TLS=true
+   ```
+   .envファイルはapp.pyと同じディレクトリに配置してください。
+   > **注意**: `.env` には個人情報が含まれます。リポジトリにコミットしたり共有したりしないようご注意ください。
+   環境変数は実行環境に直接設定しても動作します。
 
 3. アプリケーションを起動します。
    ```bash
    python app.py
    ```
 4. ブラウザで `http://localhost:5000` にアクセスすると、アップロード画面が表示されます。
-
-## 環境変数の設定
-
-以下の変数は必須です。`.env` に追記するか、実行環境に直接設定してください。
-
-```
-EMAIL_SENDER=example@example.com
-EMAIL_USERNAME=example@example.com
-EMAIL_PASSWORD=your-password
-EMAIL_SMTP_SERVER=smtp.example.com
-EMAIL_SMTP_PORT=587
-EMAIL_USE_TLS=true
-```
-
-> **注意**: `.env` には個人情報が含まれます。リポジトリにコミットしたり共有したりしないようご注意ください。
 
 ## 使い方
 
