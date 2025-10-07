@@ -259,9 +259,9 @@ class OrderManager:
 
         def sort_key(entry: ZipEntry) -> tuple[int, int]:
             persons = entry.persons or []
-            indices = [member_order.index(person) for person in persons if person in member_order]
-            if indices:
-                return (0, min(indices))
+            matched_index = _find_member_order_index(member_order, persons)
+            if matched_index is not None:
+                return (0, matched_index)
             return (1, fallback_positions[entry.identifier])
 
         return sorted(items, key=sort_key)
@@ -397,6 +397,50 @@ def _extract_person_names(sanitized_name: str) -> List[str]:
     tokens = re.split(r"[・,，、\.．\s]+", remainder)
     persons = [token.strip() for token in tokens if token.strip()]
     return persons
+
+
+def _normalize_person_token(value: str) -> str:
+    normalized = re.sub(r"[\s・･.,，、．]+", "", value)
+    return normalized.lower()
+
+
+def _find_member_order_index(member_order: List[str], persons: List[str]) -> int | None:
+    if not member_order or not persons:
+        return None
+
+    normalized_order: List[tuple[str, int]] = []
+    for index, name in enumerate(member_order):
+        if not isinstance(name, str):
+            continue
+        normalized = _normalize_person_token(name)
+        if normalized:
+            normalized_order.append((normalized, index))
+
+    if not normalized_order:
+        return None
+
+    best_index: int | None = None
+    for person in persons:
+        if not isinstance(person, str):
+            continue
+        normalized_person = _normalize_person_token(person)
+        if not normalized_person:
+            continue
+        for normalized_name, order_index in normalized_order:
+            if not normalized_name:
+                continue
+            if (
+                normalized_person == normalized_name
+                or normalized_person in normalized_name
+                or normalized_name in normalized_person
+            ):
+                if best_index is None or order_index < best_index:
+                    best_index = order_index
+                if best_index == 0:
+                    return best_index
+                break
+
+    return best_index
 
 
 def _extract_report_number_from_name(name: str | None) -> str | None:

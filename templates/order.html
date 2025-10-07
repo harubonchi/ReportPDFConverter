@@ -309,6 +309,47 @@
         return [];
       }
 
+      function normalizePersonToken(value) {
+        return String(value ?? "")
+          .trim()
+          .replace(/[\s・･.,，、．]+/g, "")
+          .toLowerCase();
+      }
+
+      function findMemberOrderIndex(persons, normalizedOrder) {
+        if (!Array.isArray(persons) || persons.length === 0 || normalizedOrder.length === 0) {
+          return null;
+        }
+
+        let bestIndex = null;
+        for (const person of persons) {
+          const normalizedPerson = normalizePersonToken(person);
+          if (!normalizedPerson) {
+            continue;
+          }
+          for (const item of normalizedOrder) {
+            if (!item.normalized) {
+              continue;
+            }
+            if (
+              normalizedPerson === item.normalized ||
+              normalizedPerson.includes(item.normalized) ||
+              item.normalized.includes(normalizedPerson)
+            ) {
+              if (bestIndex === null || item.index < bestIndex) {
+                bestIndex = item.index;
+              }
+              break;
+            }
+          }
+          if (bestIndex === 0) {
+            break;
+          }
+        }
+
+        return bestIndex;
+      }
+
       function applyDefaultOrderToBlock(block) {
         if (!block) {
           return;
@@ -320,13 +361,19 @@
           return;
         }
 
-        const defaultIndexMap = new Map();
+        const normalizedOrder = [];
+        const seen = new Set();
         defaultOrder.forEach((name, index) => {
-          const normalizedName = typeof name === "string" ? name.trim() : String(name ?? "").trim();
-          if (normalizedName && !defaultIndexMap.has(normalizedName)) {
-            defaultIndexMap.set(normalizedName, index);
+          const normalizedName = normalizePersonToken(name);
+          if (!normalizedName || seen.has(normalizedName)) {
+            return;
           }
+          seen.add(normalizedName);
+          normalizedOrder.push({ normalized: normalizedName, index });
         });
+        if (normalizedOrder.length === 0) {
+          return;
+        }
 
         const fallbackPositions = new Map();
         items.forEach((item, index) => {
@@ -335,23 +382,13 @@
 
         const getSortInfo = (item) => {
           const persons = getPersonsFromDataset(item);
-          let bestIndex = Number.POSITIVE_INFINITY;
-          persons.forEach((person) => {
-            const normalized = typeof person === "string" ? person.trim() : String(person ?? "").trim();
-            if (!normalized) {
-              return;
-            }
-            const foundIndex = defaultIndexMap.get(normalized);
-            if (foundIndex !== undefined && foundIndex < bestIndex) {
-              bestIndex = foundIndex;
-            }
-          });
+          const matchedIndex = findMemberOrderIndex(persons, normalizedOrder);
 
           const originalIndex = fallbackPositions.get(item) ?? Number.MAX_SAFE_INTEGER;
-          if (bestIndex !== Number.POSITIVE_INFINITY) {
+          if (matchedIndex !== null && matchedIndex !== undefined) {
             return {
               recognized: true,
-              index: bestIndex,
+              index: matchedIndex,
               originalIndex,
             };
           }
@@ -575,12 +612,20 @@
           window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
         const isIOSStandalone =
           typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
-        const featureString = isStandalone || isIOSStandalone
-          ? "noopener=yes"
-          : "noopener=yes,width=680,height=720";
+        const featureString = isStandalone || isIOSStandalone ? "" : "width=680,height=720";
         const openedWindow = window.open(targetUrl, "_blank", featureString);
         if (!openedWindow) {
-          alert("ポップアップがブロックされました。ブラウザの設定をご確認ください。");
+          const tempLink = document.createElement("a");
+          tempLink.href = targetUrl;
+          tempLink.target = "_blank";
+          tempLink.rel = "";
+          tempLink.style.display = "none";
+          document.body.appendChild(tempLink);
+          tempLink.click();
+          requestAnimationFrame(() => {
+            tempLink.remove();
+          });
+          console.warn("ポップアップがブロックされた可能性があります。", targetUrl);
         }
       };
 
