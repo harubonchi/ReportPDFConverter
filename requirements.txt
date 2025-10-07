@@ -11,4 +11,5 @@ PyPDF2==3.0.1
 python-dotenv==1.1.1
 pywin32==311
 tqdm==4.67.1
+tzdata==2025.2
 Werkzeug==3.1.3
