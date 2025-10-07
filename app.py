@@ -357,6 +357,10 @@ def prepare_upload() -> Response | str:
     if team_order and ungrouped_count:
         team_summaries.append({"name": None, "count": ungrouped_count})
 
+    team_order_keys = list(team_order)
+    if ungrouped_count:
+        team_order_keys.append("__ungrouped__")
+
     return render_template(
         "order.html",
         job_id=job_id,
@@ -364,8 +368,7 @@ def prepare_upload() -> Response | str:
         ordered_display_names=ordered_display_names,
         entry_map=entry_map,
         team_summaries=team_summaries,
-        team_names=team_order,
-        has_teams=bool(team_order),
+        team_order_keys=team_order_keys,
         ungrouped_count=ungrouped_count,
     )
 

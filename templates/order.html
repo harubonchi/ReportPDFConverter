@@ -48,21 +48,85 @@
         color: #0b7285;
         padding: 0.35rem 0.75rem;
         border-radius: 999px;
-        cursor: pointer;
+        cursor: grab;
         font-size: 0.9rem;
+      }
+      .team-pill:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.2);
       }
       .team-pill:hover {
         background: #c5f6fa;
+      }
+      .team-pill.dragging {
+        opacity: 0.6;
+        cursor: grabbing;
       }
       .team-pill.ungrouped {
         border-color: #495057;
         color: #495057;
         background: #f1f3f5;
       }
-      select {
-        width: 100%;
-        min-height: 260px;
-        font-size: 1rem;
+      .document-board {
+        border: 1px dashed #94a3b8;
+        border-radius: 8px;
+        background: #fff;
+        padding: 0.75rem;
+        max-height: 420px;
+        overflow-y: auto;
+        margin-top: 0.75rem;
+      }
+      .document-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .document-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 0.65rem 0.9rem;
+        background: #fdfdfd;
+        cursor: grab;
+      }
+      .document-item:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.25);
+      }
+      .document-item.dragging {
+        opacity: 0.6;
+        cursor: grabbing;
+      }
+      .document-item.is-selected {
+        border-color: #0b7285;
+        box-shadow: 0 0 0 2px rgba(11, 114, 133, 0.3);
+      }
+      .doc-title {
+        font-weight: 600;
+        margin-right: 1rem;
+      }
+      .team-badge {
+        background: #e3fafc;
+        color: #0b7285;
+        border-radius: 999px;
+        padding: 0.25rem 0.65rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .team-badge.ungrouped {
+        background: #f1f3f5;
+        color: #495057;
+      }
+      .list-hint {
+        font-size: 0.9rem;
+        color: #495057;
+        margin-top: 0.35rem;
       }
       .controls {
         margin-top: 1rem;
@@ -97,13 +161,15 @@
     {% if team_summaries %}
       <div class="team-summary">
         <h2>Detected teams</h2>
-        <p>Select a team to jump to the first document. Use the team controls below to adjust their order.</p>
+        <p>Click a team to jump to its first document. Drag the chips to reorder the team blocks.</p>
         <div class="team-list">
           {% for summary in team_summaries %}
             <button
               type="button"
               class="team-pill{% if not summary.name %} ungrouped{% endif %}"
-              onclick="focusTeam({{ (summary.name if summary.name else '__ungrouped__') | tojson }})"
+              data-team="{{ summary.name if summary.name else '' }}"
+              data-key="{{ summary.name if summary.name else '__ungrouped__' }}"
+              draggable="true"
             >
               {{ summary.name if summary.name else 'Ungrouped' }} · {{ summary.count }}
             </button>
@@ -118,134 +184,307 @@
         <input type="hidden" name="email" value="{{ email }}" />
         <input type="hidden" name="order" id="order-input" />
 
-        <label for="file-order">Document order</label>
-        <select id="file-order" size="10" multiple>
-          {% for name in ordered_display_names %}
-            {% set entry = entry_map[name] %}
-            <option value="{{ name }}" data-team="{{ entry.team_name or '' }}" selected>
-              {{ name }}
-            </option>
-          {% endfor %}
-        </select>
+        <label for="document-list">Document order</label>
+        <p class="list-hint">Drag and drop the documents to arrange them in the desired order.</p>
+        <div class="document-board">
+          <ul id="document-list" class="document-list">
+            {% for name in ordered_display_names %}
+              {% set entry = entry_map[name] %}
+              <li
+                class="document-item"
+                draggable="true"
+                data-name="{{ name }}"
+                data-team="{{ entry.team_name or '' }}"
+                tabindex="0"
+              >
+                <span class="doc-title">{{ name }}</span>
+                <span class="team-badge{% if not entry.team_name %} ungrouped{% endif %}">
+                  {{ entry.team_name if entry.team_name else 'Ungrouped' }}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
 
         <div class="controls">
-          <button type="button" class="secondary" onclick="move(-1)">Move up</button>
-          <button type="button" class="secondary" onclick="move(1)">Move down</button>
-          {% if has_teams %}
-            <button type="button" class="secondary" onclick="moveTeamBy(-1)">Move team up</button>
-            <button type="button" class="secondary" onclick="moveTeamBy(1)">Move team down</button>
-          {% endif %}
-          <button type="button" class="secondary" onclick="resetToOriginal()">Reset order</button>
+          <button type="button" class="secondary" id="reset-button">Reset order</button>
           <button type="submit">Start background processing</button>
         </div>
       </form>
     </div>
 
+    <script type="application/json" id="initial-order-data">{{ ordered_display_names | tojson }}</script>
+    <script type="application/json" id="initial-team-order">{{ team_order_keys | tojson }}</script>
+
     <script>
-      const select = document.getElementById("file-order");
+      const documentList = document.getElementById("document-list");
       const orderInput = document.getElementById("order-input");
       const form = document.getElementById("order-form");
-      const initialOrder = Array.from(select.options).map((option) => option.value);
+      const resetButton = document.getElementById("reset-button");
+      const initialOrderElement = document.getElementById("initial-order-data");
+      const initialOrder = initialOrderElement ? JSON.parse(initialOrderElement.textContent) : [];
+      const initialTeamOrderElement = document.getElementById("initial-team-order");
+      const initialTeamOrder = initialTeamOrderElement ? JSON.parse(initialTeamOrderElement.textContent) : [];
+      const teamContainer = document.querySelector(".team-list");
+      const teamKeyToActual = new Map();
 
-      function move(direction) {
-        const selectedIndex = select.selectedIndex;
-        if (selectedIndex < 0) {
-          return;
-        }
-        const newIndex = selectedIndex + direction;
-        if (newIndex < 0 || newIndex >= select.options.length) {
-          return;
-        }
+      if (teamContainer) {
+        Array.from(teamContainer.querySelectorAll(".team-pill")).forEach((pill) => {
+          teamKeyToActual.set(pill.dataset.key, pill.dataset.team || "");
+        });
+      }
+      teamKeyToActual.set("__ungrouped__", "");
 
-        const options = Array.from(select.options);
-        const [moved] = options.splice(selectedIndex, 1);
-        options.splice(newIndex, 0, moved);
+      let draggedItem = null;
+      let draggingTeamPill = null;
+      let selectedItem = null;
 
-        setOptions(options);
-        select.selectedIndex = newIndex;
+      function updateOrderInput() {
+        const values = Array.from(documentList.querySelectorAll(".document-item")).map((item) => item.dataset.name);
+        orderInput.value = values.join("|");
       }
 
-      function setOptions(options) {
-        const fragment = document.createDocumentFragment();
-        for (const option of options) {
-          fragment.appendChild(option);
+      function clearSelection() {
+        if (selectedItem) {
+          selectedItem.classList.remove("is-selected");
+          selectedItem = null;
         }
-        select.innerHTML = "";
-        select.appendChild(fragment);
+      }
+
+      function setSelectedItem(item) {
+        if (selectedItem === item) {
+          return;
+        }
+        clearSelection();
+        selectedItem = item;
+        if (selectedItem) {
+          selectedItem.classList.add("is-selected");
+        }
+      }
+
+      function focusTeam(teamKey) {
+        const actualTeam = teamKey === "__ungrouped__" ? "" : teamKeyToActual.get(teamKey) ?? teamKey;
+        const target = Array.from(documentList.querySelectorAll(".document-item")).find(
+          (item) => (item.dataset.team || "") === actualTeam,
+        );
+        if (target) {
+          setSelectedItem(target);
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (typeof target.focus === "function") {
+            try {
+              target.focus({ preventScroll: true });
+            } catch (error) {
+              target.focus();
+            }
+          }
+        }
+      }
+
+      function reorderDocumentsByTeam(teamKeys) {
+        if (!teamKeys.length) {
+          updateOrderInput();
+          return;
+        }
+        const grouped = new Map();
+        const items = Array.from(documentList.querySelectorAll(".document-item"));
+        items.forEach((item) => {
+          const team = item.dataset.team || "";
+          if (!grouped.has(team)) {
+            grouped.set(team, []);
+          }
+          grouped.get(team).push(item);
+        });
+
+        const orderedItems = [];
+        teamKeys.forEach((key) => {
+          const actualTeam = key === "__ungrouped__" ? "" : teamKeyToActual.get(key) ?? key;
+          const groupItems = grouped.get(actualTeam) || [];
+          orderedItems.push(...groupItems);
+          grouped.delete(actualTeam);
+        });
+
+        grouped.forEach((groupItems) => {
+          orderedItems.push(...groupItems);
+        });
+
+        documentList.replaceChildren(...orderedItems);
+        updateOrderInput();
+      }
+
+      function resetTeamChips() {
+        if (!teamContainer || !initialTeamOrder.length) {
+          return;
+        }
+        const pillMap = new Map();
+        Array.from(teamContainer.querySelectorAll(".team-pill")).forEach((pill) => {
+          pillMap.set(pill.dataset.key, pill);
+        });
+        const ordered = [];
+        initialTeamOrder.forEach((key) => {
+          const pill = pillMap.get(key);
+          if (pill) {
+            ordered.push(pill);
+            pillMap.delete(key);
+          }
+        });
+        ordered.push(...pillMap.values());
+        teamContainer.replaceChildren(...ordered);
       }
 
       function resetToOriginal() {
-        const optionByValue = new Map(Array.from(select.options).map((option) => [option.value, option]));
-        const ordered = initialOrder.map((value) => optionByValue.get(value)).filter(Boolean);
-        setOptions(ordered);
-        if (ordered.length) {
-          select.selectedIndex = 0;
-        }
-      }
-
-      function moveTeamBy(direction) {
-        const selectedOption = select.options[select.selectedIndex];
-        if (!selectedOption) {
-          return;
-        }
-
-        const selectedTeam = selectedOption.dataset.team || "";
-        const options = Array.from(select.options);
-        const teamOrder = [];
-        const teamOptionsMap = new Map();
-
-        for (const option of options) {
-          const team = option.dataset.team || "";
-          if (!teamOptionsMap.has(team)) {
-            teamOptionsMap.set(team, []);
-            teamOrder.push(team);
+        const itemMap = new Map();
+        Array.from(documentList.querySelectorAll(".document-item")).forEach((item) => {
+          itemMap.set(item.dataset.name, item);
+        });
+        const orderedItems = [];
+        initialOrder.forEach((name) => {
+          const item = itemMap.get(name);
+          if (item) {
+            orderedItems.push(item);
+            itemMap.delete(name);
           }
-          teamOptionsMap.get(team).push(option);
-        }
-
-        const currentIndex = teamOrder.indexOf(selectedTeam);
-        if (currentIndex < 0) {
-          return;
-        }
-
-        const newIndex = currentIndex + direction;
-        if (newIndex < 0 || newIndex >= teamOrder.length) {
-          return;
-        }
-
-        const [team] = teamOrder.splice(currentIndex, 1);
-        teamOrder.splice(newIndex, 0, team);
-
-        const ordered = teamOrder.flatMap((teamName) => teamOptionsMap.get(teamName) || []);
-        setOptions(ordered);
-
-        const selectedTeamOptions = teamOptionsMap.get(selectedTeam) || [];
-        const firstValue = selectedTeamOptions.length ? selectedTeamOptions[0].value : null;
-        if (!firstValue) {
-          return;
-        }
-
-        const nextIndex = ordered.findIndex((option) => option.value === firstValue);
-        if (nextIndex >= 0) {
-          select.selectedIndex = nextIndex;
-          select.focus();
-        }
+        });
+        orderedItems.push(...itemMap.values());
+        documentList.replaceChildren(...orderedItems);
+        clearSelection();
+        resetTeamChips();
+        updateOrderInput();
       }
 
-      function focusTeam(teamName) {
-        const options = Array.from(select.options);
-        const normalisedTeam = teamName === "__ungrouped__" ? "" : teamName;
-        const targetIndex = options.findIndex((option) => (option.dataset.team || "") === normalisedTeam);
-        if (targetIndex >= 0) {
-          select.selectedIndex = targetIndex;
-          select.focus();
+      documentList.addEventListener("dragstart", (event) => {
+        const item = event.target.closest(".document-item");
+        if (!item) {
+          return;
         }
+        draggedItem = item;
+        item.classList.add("dragging");
+        setSelectedItem(item);
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", item.dataset.name);
+      });
+
+      documentList.addEventListener("dragover", (event) => {
+        if (!draggedItem) {
+          return;
+        }
+        event.preventDefault();
+        const target = event.target.closest(".document-item");
+        if (!target) {
+          const rect = documentList.getBoundingClientRect();
+          const shouldAppend = event.clientY - rect.top > rect.height / 2;
+          if (shouldAppend) {
+            documentList.appendChild(draggedItem);
+          } else if (documentList.firstElementChild) {
+            documentList.insertBefore(draggedItem, documentList.firstElementChild);
+          }
+          return;
+        }
+        if (target === draggedItem) {
+          return;
+        }
+        const rect = target.getBoundingClientRect();
+        const shouldInsertBefore = event.clientY - rect.top < rect.height / 2;
+        documentList.insertBefore(draggedItem, shouldInsertBefore ? target : target.nextElementSibling);
+      });
+
+      documentList.addEventListener("drop", (event) => {
+        if (draggedItem) {
+          event.preventDefault();
+        }
+      });
+
+      documentList.addEventListener("dragend", () => {
+        if (!draggedItem) {
+          return;
+        }
+        draggedItem.classList.remove("dragging");
+        draggedItem = null;
+        updateOrderInput();
+      });
+
+      documentList.addEventListener("click", (event) => {
+        const item = event.target.closest(".document-item");
+        if (item) {
+          setSelectedItem(item);
+        }
+      });
+
+      documentList.addEventListener("keydown", (event) => {
+        const item = event.target.closest(".document-item");
+        if (!item) {
+          return;
+        }
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          setSelectedItem(item);
+        }
+      });
+
+      if (teamContainer) {
+        teamContainer.addEventListener("click", (event) => {
+          const pill = event.target.closest(".team-pill");
+          if (!pill) {
+            return;
+          }
+          focusTeam(pill.dataset.key);
+        });
+
+        teamContainer.addEventListener("keydown", (event) => {
+          const pill = event.target.closest(".team-pill");
+          if (!pill) {
+            return;
+          }
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            focusTeam(pill.dataset.key);
+          }
+        });
+
+        teamContainer.addEventListener("dragstart", (event) => {
+          const pill = event.target.closest(".team-pill");
+          if (!pill) {
+            return;
+          }
+          draggingTeamPill = pill;
+          pill.classList.add("dragging");
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", pill.dataset.key);
+        });
+
+        teamContainer.addEventListener("dragover", (event) => {
+          if (!draggingTeamPill) {
+            return;
+          }
+          event.preventDefault();
+          const pill = event.target.closest(".team-pill");
+          if (!pill || pill === draggingTeamPill) {
+            return;
+          }
+          const rect = pill.getBoundingClientRect();
+          const shouldInsertBefore = event.clientX - rect.left < rect.width / 2;
+          teamContainer.insertBefore(draggingTeamPill, shouldInsertBefore ? pill : pill.nextElementSibling);
+        });
+
+        teamContainer.addEventListener("drop", (event) => {
+          if (draggingTeamPill) {
+            event.preventDefault();
+          }
+        });
+
+        teamContainer.addEventListener("dragend", () => {
+          if (!draggingTeamPill) {
+            return;
+          }
+          draggingTeamPill.classList.remove("dragging");
+          draggingTeamPill = null;
+          const teamKeys = Array.from(teamContainer.querySelectorAll(".team-pill")).map((pill) => pill.dataset.key);
+          reorderDocumentsByTeam(teamKeys);
+        });
       }
 
-      function updateOrderInput() {
-        const values = Array.from(select.options).map((option) => option.value);
-        orderInput.value = values.join("|");
-      }
+      resetButton.addEventListener("click", () => {
+        resetToOriginal();
+      });
 
       form.addEventListener("submit", (event) => {
         updateOrderInput();
@@ -254,6 +493,9 @@
           alert("Please select at least one document.");
         }
       });
+
+      updateOrderInput();
+      window.focusTeam = focusTeam;
     </script>
   </body>
 </html>
