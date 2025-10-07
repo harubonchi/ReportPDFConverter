@@ -22,9 +22,9 @@ class EmailConfig:
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
-        sender = 'harubonchi@gmail.com'
-        username = 'harubonchi@gmail.com'
-        password = 'zuaa oqrg star rtcx'
+        sender = 'roboken.report.tool@gmail.com'
+        username = 'roboken.report.tool@gmail.com'
+        password = 'myoe agfr zene yzpr'
         smtp_server = 'smtp.gmail.com'
         smtp_port = 587
         use_tls = 'true'
