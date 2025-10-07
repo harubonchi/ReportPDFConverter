@@ -215,7 +215,11 @@ class OrderManager:
             entry = entries.get(display_name)
             if not entry:
                 continue
-            team_key = entry.team_name or UNGROUPED_TEAM_KEY
+            raw_team_name = (entry.team_name or "").strip()
+            if not raw_team_name:
+                # 自動生成される「班なし」グループは保存しない
+                continue
+            team_key = raw_team_name
             if team_key not in team_sequence:
                 team_sequence.append(team_key)
             member_list = member_sequences.setdefault(team_key, [])

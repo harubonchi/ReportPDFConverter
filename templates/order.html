@@ -613,9 +613,15 @@
           window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
         const isIOSStandalone =
           typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
+        const screenObject = typeof window.screen === "object" ? window.screen : null;
+        const screenHeight = screenObject
+          ? Number(screenObject.availHeight || screenObject.height || 0)
+          : 0;
+        const fallbackHeight = window.innerHeight ? Number(window.innerHeight) : 720;
+        const popupHeight = Math.max(480, Math.round((screenHeight || fallbackHeight) * 0.8));
         const popupFeatures = [
           "width=680",
-          "height=720",
+          `height=${popupHeight}`,
           "toolbar=no",
           "location=no",
           "status=no",
