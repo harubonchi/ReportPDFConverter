@@ -77,6 +77,41 @@ class OrderManager:
         self.storage_file = storage_file
         self._lock = threading.Lock()
 
+    def _write_preferences(self, preferences: OrderPreferences) -> None:
+        self.storage_file.parent.mkdir(parents=True, exist_ok=True)
+        with self.storage_file.open("w", encoding="utf-8") as fh:
+            json.dump(preferences.to_dict(), fh, ensure_ascii=False, indent=2)
+
+    def _merge_preferences(
+        self, existing: OrderPreferences, new: OrderPreferences
+    ) -> OrderPreferences:
+        team_sequence: List[str] = []
+        for team_key in new.team_sequence:
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+        for team_key in existing.team_sequence:
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+
+        member_sequences: Dict[str, List[str]] = {
+            key: list(value) for key, value in existing.member_sequences.items()
+        }
+
+        for team_key, members in new.member_sequences.items():
+            merged_members: List[str] = []
+            seen: set[str] = set()
+            for member in members:
+                if member not in seen:
+                    merged_members.append(member)
+                    seen.add(member)
+            for member in existing.member_sequences.get(team_key, []):
+                if member not in seen:
+                    merged_members.append(member)
+                    seen.add(member)
+            member_sequences[team_key] = merged_members
+
+        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
+
     def load_preferences(self) -> OrderPreferences:
         if not self.storage_file.exists():
             return OrderPreferences.empty()
@@ -129,9 +164,42 @@ class OrderManager:
     def save(self, order: List[str], entries: Dict[str, ZipEntry]) -> None:
         preferences = self._build_preferences(order, entries)
         with self._lock:
-            self.storage_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.storage_file.open("w", encoding="utf-8") as fh:
-                json.dump(preferences.to_dict(), fh, ensure_ascii=False, indent=2)
+            existing = self.load_preferences()
+            merged = self._merge_preferences(existing, preferences)
+            self._write_preferences(merged)
+
+    def save_member_sequence(self, team_key: str, members: List[str]) -> None:
+        normalized_team = team_key or UNGROUPED_TEAM_KEY
+        cleaned_members: List[str] = []
+        for member in members:
+            if not isinstance(member, str):
+                continue
+            stripped = member.strip()
+            if stripped and stripped not in cleaned_members:
+                cleaned_members.append(stripped)
+
+        with self._lock:
+            preferences = self.load_preferences()
+            if cleaned_members:
+                if normalized_team not in preferences.team_sequence:
+                    preferences.team_sequence.append(normalized_team)
+                preferences.member_sequences[normalized_team] = cleaned_members
+            else:
+                preferences.member_sequences.pop(normalized_team, None)
+                preferences.team_sequence = [
+                    key for key in preferences.team_sequence if key != normalized_team
+                ]
+            self._write_preferences(preferences)
+
+    def delete_member_sequence(self, team_key: str) -> None:
+        normalized_team = team_key or UNGROUPED_TEAM_KEY
+        with self._lock:
+            preferences = self.load_preferences()
+            preferences.member_sequences.pop(normalized_team, None)
+            preferences.team_sequence = [
+                key for key in preferences.team_sequence if key != normalized_team
+            ]
+            self._write_preferences(preferences)
 
     def _build_preferences(self, order: List[str], entries: Dict[str, ZipEntry]) -> OrderPreferences:
         team_sequence: List[str] = []
@@ -326,7 +394,7 @@ def _extract_person_names(sanitized_name: str) -> List[str]:
     remainder = remainder.strip()
     if not remainder:
         return []
-    tokens = re.split(r"[・,，、\s]+", remainder)
+    tokens = re.split(r"[・,，、\.．\s]+", remainder)
     persons = [token.strip() for token in tokens if token.strip()]
     return persons
 
@@ -647,6 +715,8 @@ def prepare_upload() -> Response | str:
         flash("アップロードされたZIPにWordファイルが見つかりませんでした。")
         return redirect(url_for("index"))
 
+    preferences = order_manager.load_preferences()
+
     entry_map: Dict[str, ZipEntry] = {entry.display_name: entry for entry in entries}
     team_sequence, team_entries = order_manager.initial_layout(list(entry_map.values()))
     ordered_display_names: List[str] = []
@@ -673,9 +743,14 @@ def prepare_upload() -> Response | str:
                 "count": len(block_entries),
                 "entries": block_entries,
             }
-        )
+            )
 
     team_options = [block["label"] for block in team_blocks]
+
+    default_member_sequences = {
+        key: list(value)
+        for key, value in preferences.member_sequences.items()
+    }
 
     upload_sessions[job_id] = {
         "entries": entry_map,
@@ -706,6 +781,130 @@ def prepare_upload() -> Response | str:
         ordered_display_names=ordered_display_names,
         team_blocks=team_blocks,
         initial_state=initial_state,
+        default_member_sequences=default_member_sequences,
+    )
+
+
+def _collect_preference_teams(preferences: OrderPreferences) -> List[Dict[str, object]]:
+    teams: List[Dict[str, object]] = []
+    seen: set[str] = set()
+
+    def append_team(team_key: str) -> None:
+        if team_key in seen:
+            return
+        teams.append(
+            {
+                "key": team_key,
+                "label": _team_display_label(team_key),
+                "members": list(preferences.member_sequences.get(team_key, [])),
+            }
+        )
+        seen.add(team_key)
+
+    for team_key in preferences.team_sequence:
+        append_team(team_key)
+
+    for team_key in preferences.member_sequences.keys():
+        append_team(team_key)
+
+    append_team(UNGROUPED_TEAM_KEY)
+
+    return teams
+
+
+@app.route("/default-order-editor", methods=["GET"])
+def default_order_editor() -> str:
+    team_param = request.args.get("team", "").strip()
+    preferences = order_manager.load_preferences()
+    teams = _collect_preference_teams(preferences)
+
+    available_keys = {team["key"] for team in teams}
+    initial_team_key = team_param if team_param in available_keys else None
+    if not initial_team_key:
+        if teams:
+            initial_team_key = teams[0]["key"]
+        else:
+            initial_team_key = UNGROUPED_TEAM_KEY
+
+    initial_data = {
+        "teams": teams,
+        "team_order": [team["key"] for team in teams],
+        "initial_team_key": initial_team_key,
+        "ungrouped_key": UNGROUPED_TEAM_KEY,
+        "ungrouped_label": _team_display_label(UNGROUPED_TEAM_KEY),
+    }
+
+    return render_template(
+        "default_order_editor.html",
+        initial_data=initial_data,
+    )
+
+
+@app.route("/default-order-editor/save", methods=["POST"])
+def save_default_member_order() -> Response:
+    payload = request.get_json(silent=True) or {}
+    team_key_raw = payload.get("team_key", "")
+    members_raw = payload.get("members", [])
+
+    if isinstance(team_key_raw, str):
+        team_key = team_key_raw.strip()
+    else:
+        team_key = str(team_key_raw or "").strip()
+
+    if not isinstance(members_raw, list):
+        return jsonify({"error": "メンバー情報の形式が正しくありません。"}), 400
+
+    normalized_members: List[str] = []
+    for item in members_raw:
+        if not isinstance(item, str):
+            continue
+        stripped = item.strip()
+        if stripped and stripped not in normalized_members:
+            normalized_members.append(stripped)
+
+    if not team_key:
+        team_key = UNGROUPED_TEAM_KEY
+
+    order_manager.save_member_sequence(team_key, normalized_members)
+
+    return jsonify(
+        {
+            "status": "ok",
+            "team_key": team_key,
+            "label": _team_display_label(team_key),
+            "members": normalized_members,
+        }
+    )
+
+
+@app.route("/default-order-editor/delete", methods=["POST"])
+def delete_default_member_order() -> Response:
+    payload = request.get_json(silent=True) or {}
+    team_key_raw = payload.get("team_key", "")
+
+    if isinstance(team_key_raw, str):
+        team_key = team_key_raw.strip()
+    else:
+        team_key = str(team_key_raw or "").strip()
+
+    if not team_key:
+        team_key = UNGROUPED_TEAM_KEY
+
+    order_manager.delete_member_sequence(team_key)
+
+    return jsonify({"status": "ok", "team_key": team_key})
+
+
+@app.route("/api/default-order", methods=["GET"])
+def api_default_order() -> Response:
+    preferences = order_manager.load_preferences()
+    teams = _collect_preference_teams(preferences)
+    return jsonify(
+        {
+            "team_sequence": preferences.team_sequence,
+            "member_sequences": preferences.member_sequences,
+            "teams": teams,
+        }
     )
 
 

@@ -214,6 +214,7 @@
                     class="document-item"
                     data-name="{{ entry.display_name }}"
                     data-team="{{ entry.team }}"
+                    data-persons='{{ entry.persons | tojson | safe }}'
                     draggable="false"
                   >
                     <div class="document-info">
@@ -232,6 +233,17 @@
         </div>
 
         <div class="controls">
+          <button
+            type="button"
+            class="secondary"
+            id="apply-default-order"
+          >保存された並びに合わせる</button>
+          <button
+            type="button"
+            class="secondary"
+            id="open-default-order-editor"
+            data-editor-url="{{ url_for('default_order_editor') }}"
+          >デフォルト順を編集</button>
           <button type="button" class="secondary" id="reset-button">最初の並びに戻す</button>
           <button type="submit">PDF 変換と送信を開始</button>
         </div>
@@ -239,6 +251,9 @@
     </div>
 
     <script type="application/json" id="initial-state">{{ initial_state | tojson }}</script>
+    <script type="application/json" id="default-member-sequences">
+      {{ default_member_sequences | tojson }}
+    </script>
 
     <script>
       const teamBoard = document.getElementById("team-board");
@@ -247,6 +262,12 @@
       const form = document.getElementById("order-form");
       const initialStateElement = document.getElementById("initial-state");
       const initialState = initialStateElement ? JSON.parse(initialStateElement.textContent) : [];
+      const defaultMemberSequencesElement = document.getElementById("default-member-sequences");
+      let defaultMemberSequences = defaultMemberSequencesElement
+        ? JSON.parse(defaultMemberSequencesElement.textContent || "{}")
+        : {};
+      const applyDefaultOrderButton = document.getElementById("apply-default-order");
+      const openDefaultOrderEditorButton = document.getElementById("open-default-order-editor");
 
       function updateOrderInput() {
         const names = [];
@@ -270,6 +291,100 @@
         if (block.querySelectorAll(".document-item").length === 0) {
           block.remove();
         }
+      }
+
+      function getPersonsFromDataset(item) {
+        const raw = item.dataset.persons;
+        if (!raw) {
+          return [];
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.map((value) => String(value));
+          }
+        } catch (error) {
+          console.warn("Failed to parse persons from dataset", error);
+        }
+        return [];
+      }
+
+      function applyDefaultOrderToBlock(block) {
+        if (!block) {
+          return;
+        }
+        const teamKey = block.getAttribute("data-team-key") || "";
+        const defaultOrder = defaultMemberSequences[teamKey];
+        const items = Array.from(block.querySelectorAll(".document-item"));
+        if (!Array.isArray(defaultOrder) || defaultOrder.length === 0 || items.length === 0) {
+          return;
+        }
+
+        const fallback = new Map();
+        items.forEach((item, index) => {
+          fallback.set(item.dataset.name, index);
+        });
+
+        const getSortInfo = (item) => {
+          const persons = getPersonsFromDataset(item);
+          const indices = persons
+            .map((person) => defaultOrder.indexOf(person))
+            .filter((index) => index >= 0);
+          if (indices.length > 0) {
+            return { priority: 0, index: Math.min(...indices) };
+          }
+          const fallbackIndex = fallback.get(item.dataset.name);
+          return {
+            priority: 1,
+            index: fallbackIndex !== undefined ? fallbackIndex : Number.MAX_SAFE_INTEGER,
+          };
+        };
+
+        items.sort((a, b) => {
+          const aInfo = getSortInfo(a);
+          const bInfo = getSortInfo(b);
+          if (aInfo.priority !== bInfo.priority) {
+            return aInfo.priority - bInfo.priority;
+          }
+          if (aInfo.index !== bInfo.index) {
+            return aInfo.index - bInfo.index;
+          }
+          const aFallback = fallback.get(a.dataset.name) ?? Number.MAX_SAFE_INTEGER;
+          const bFallback = fallback.get(b.dataset.name) ?? Number.MAX_SAFE_INTEGER;
+          if (aFallback !== bFallback) {
+            return aFallback - bFallback;
+          }
+          return a.dataset.name.localeCompare(b.dataset.name, "ja");
+        });
+
+        const list = block.querySelector(".document-list");
+        items.forEach((item) => list.appendChild(item));
+        updateTeamCounts(block);
+      }
+
+      function applyDefaultOrderToAll() {
+        teamBoard.querySelectorAll(".team-block").forEach((block) => {
+          applyDefaultOrderToBlock(block);
+        });
+        updateOrderInput();
+      }
+
+      function refreshDefaultMemberSequences() {
+        fetch("{{ url_for('api_default_order') }}")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to load defaults: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data && data.member_sequences) {
+              defaultMemberSequences = data.member_sequences;
+            }
+          })
+          .catch((error) => {
+            console.warn("デフォルト順の取得に失敗しました", error);
+          });
       }
 
       function handleMove(item, direction) {
@@ -371,18 +486,19 @@
           header.appendChild(actions);
           block.appendChild(header);
 
-          const list = document.createElement("ul");
-          list.className = "document-list";
-          team.entries.forEach((entry) => {
-            const item = document.createElement("li");
-            item.className = "document-item";
-            item.dataset.name = entry.display_name;
-            item.dataset.team = entry.team || "";
-            item.setAttribute("draggable", "false");
+            const list = document.createElement("ul");
+            list.className = "document-list";
+            team.entries.forEach((entry) => {
+              const item = document.createElement("li");
+              item.className = "document-item";
+              item.dataset.name = entry.display_name;
+              item.dataset.team = entry.team || "";
+              item.dataset.persons = JSON.stringify(entry.persons || []);
+              item.setAttribute("draggable", "false");
 
-            const info = document.createElement("div");
-            info.className = "document-info";
-            const titleSpan = document.createElement("span");
+              const info = document.createElement("div");
+              info.className = "document-info";
+              const titleSpan = document.createElement("span");
             titleSpan.className = "doc-title";
             titleSpan.textContent = entry.display_name;
             info.appendChild(titleSpan);
@@ -428,11 +544,48 @@
         rebuildFromState(initialState);
       });
 
+      if (applyDefaultOrderButton) {
+        applyDefaultOrderButton.addEventListener("click", () => {
+          applyDefaultOrderToAll();
+        });
+      }
+
+      if (openDefaultOrderEditorButton) {
+        openDefaultOrderEditorButton.addEventListener("click", () => {
+          const editorUrl = openDefaultOrderEditorButton.dataset.editorUrl;
+          if (!editorUrl) {
+            return;
+          }
+          const focusedBlock = document.activeElement
+            ? document.activeElement.closest && document.activeElement.closest(".team-block")
+            : null;
+          let teamKey = focusedBlock ? focusedBlock.getAttribute("data-team-key") : null;
+          if (!teamKey) {
+            const firstBlock = teamBoard.querySelector(".team-block");
+            teamKey = firstBlock ? firstBlock.getAttribute("data-team-key") : "";
+          }
+          const url = new URL(editorUrl, window.location.origin);
+          if (teamKey) {
+            url.searchParams.set("team", teamKey);
+          }
+          window.open(url.toString(), "_blank", "noopener=yes,width=680,height=720");
+        });
+      }
+
       form.addEventListener("submit", (event) => {
         updateOrderInput();
         if (!orderInput.value) {
           event.preventDefault();
           alert("少なくとも1つのドキュメントを残してください。");
+        }
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        if (event.data && event.data.type === "default-order-updated") {
+          refreshDefaultMemberSequences();
         }
       });
 

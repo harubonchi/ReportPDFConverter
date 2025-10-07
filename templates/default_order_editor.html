@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>デフォルト順の編集</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+        margin: 1.5rem auto;
+        max-width: 640px;
+        color: #1f2933;
+        background: #f1f5f9;
+      }
+      .container {
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 1.5rem;
+        border: 1px solid #cbd5e1;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        color: #0b7285;
+        margin-bottom: 1.25rem;
+        text-align: center;
+      }
+      .editor-header {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: space-between;
+        align-items: flex-end;
+        margin-bottom: 1rem;
+      }
+      .selector {
+        flex: 1 1 240px;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+      }
+      label {
+        font-weight: 600;
+        color: #334155;
+      }
+      select,
+      input[type="text"] {
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        padding: 0.45rem 0.6rem;
+        font-size: 1rem;
+      }
+      button {
+        border: none;
+        border-radius: 6px;
+        padding: 0.5rem 0.85rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+        background: #0b7285;
+        color: #fff;
+      }
+      button.secondary {
+        background: #495057;
+      }
+      button.danger {
+        background: #fa5252;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      .team-name {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0b7285;
+        margin-bottom: 0.75rem;
+      }
+      .member-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+      }
+      .member-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0.55rem 0.75rem;
+        background: #f8fafc;
+      }
+      .member-name {
+        font-weight: 600;
+        word-break: break-word;
+      }
+      .member-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .member-actions button {
+        padding: 0.35rem 0.55rem;
+        font-size: 0.85rem;
+      }
+      .empty-state {
+        text-align: center;
+        padding: 1rem;
+        color: #64748b;
+        background: #f1f5f9;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+      }
+      .member-input {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 1rem;
+      }
+      .member-input input[type="text"] {
+        flex: 1 1 auto;
+      }
+      .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1.5rem;
+      }
+      @media (max-width: 560px) {
+        body {
+          margin: 1rem;
+        }
+        .editor-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        .footer {
+          flex-direction: column;
+        }
+        .footer button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>デフォルト順の編集</h1>
+    <div class="container">
+      <div class="editor-header">
+        <div class="selector">
+          <label for="group-select">対象の班</label>
+          <select id="group-select"></select>
+        </div>
+        <button type="button" class="danger" id="delete-group">この班の並びを削除</button>
+      </div>
+      <div class="team-name" id="current-group-label"></div>
+      <div class="empty-state" id="empty-state" hidden>メンバーが登録されていません。</div>
+      <ul class="member-list" id="member-list"></ul>
+      <div class="member-input">
+        <input type="text" id="new-member-name" placeholder="メンバー名を入力" />
+        <button type="button" id="add-member">追加</button>
+      </div>
+      <div class="footer">
+        <button type="button" class="secondary" id="close-editor">閉じる</button>
+        <button type="button" id="save-order">保存して閉じる</button>
+      </div>
+    </div>
+
+    <script type="application/json" id="initial-data">{{ initial_data | tojson }}</script>
+    <script>
+      const CREATE_OPTION_VALUE = "__create__";
+      const initialDataElement = document.getElementById("initial-data");
+      const initialData = initialDataElement ? JSON.parse(initialDataElement.textContent) : {};
+      const groupSelect = document.getElementById("group-select");
+      const memberList = document.getElementById("member-list");
+      const emptyState = document.getElementById("empty-state");
+      const memberInput = document.getElementById("new-member-name");
+      const addMemberButton = document.getElementById("add-member");
+      const saveButton = document.getElementById("save-order");
+      const closeButton = document.getElementById("close-editor");
+      const deleteButton = document.getElementById("delete-group");
+      const groupLabel = document.getElementById("current-group-label");
+      const saveUrl = "{{ url_for('save_default_member_order') }}";
+      const deleteUrl = "{{ url_for('delete_default_member_order') }}";
+
+      const teams = new Map();
+      let teamOrder = Array.isArray(initialData.team_order) ? [...initialData.team_order] : [];
+
+      if (Array.isArray(initialData.teams)) {
+        initialData.teams.forEach((team) => {
+          if (!team || typeof team !== "object") {
+            return;
+          }
+          const key = String(team.key || "");
+          if (!key) {
+            return;
+          }
+          const label = typeof team.label === "string" && team.label ? team.label : key;
+          const members = Array.isArray(team.members) ? [...team.members] : [];
+          teams.set(key, { key, label, members });
+          if (!teamOrder.includes(key)) {
+            teamOrder.push(key);
+          }
+        });
+      }
+
+      if (teamOrder.length === 0) {
+        teamOrder = Array.from(teams.keys());
+      }
+
+      if (teams.size === 0) {
+        const fallbackKey = initialData.ungrouped_key || "__ungrouped__";
+        const fallbackLabel = initialData.ungrouped_label || "班なし";
+        teams.set(fallbackKey, { key: fallbackKey, label: fallbackLabel, members: [] });
+        teamOrder.push(fallbackKey);
+      }
+
+      let currentTeamKey =
+        typeof initialData.initial_team_key === "string" && teams.has(initialData.initial_team_key)
+          ? initialData.initial_team_key
+          : teamOrder.find((key) => teams.has(key));
+
+      function notifyParent() {
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage({ type: "default-order-updated" }, window.location.origin);
+          } catch (error) {
+            console.warn("親ウィンドウへの通知に失敗しました", error);
+          }
+        }
+      }
+
+      function ensureSelection() {
+        if (!currentTeamKey || !teams.has(currentTeamKey)) {
+          currentTeamKey = teamOrder.find((key) => teams.has(key));
+        }
+        if (!currentTeamKey) {
+          const fallbackKey = initialData.ungrouped_key || "__ungrouped__";
+          const fallbackLabel = initialData.ungrouped_label || "班なし";
+          teams.set(fallbackKey, { key: fallbackKey, label: fallbackLabel, members: [] });
+          if (!teamOrder.includes(fallbackKey)) {
+            teamOrder.push(fallbackKey);
+          }
+          currentTeamKey = fallbackKey;
+        }
+      }
+
+      function updateGroupLabel() {
+        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        groupLabel.textContent = team ? team.label : "";
+      }
+
+      function refreshGroupOptions() {
+        ensureSelection();
+        groupSelect.innerHTML = "";
+        teamOrder.forEach((key) => {
+          const team = teams.get(key);
+          if (!team) {
+            return;
+          }
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = team.label;
+          if (key === currentTeamKey) {
+            option.selected = true;
+          }
+          groupSelect.appendChild(option);
+        });
+        const createOption = document.createElement("option");
+        createOption.value = CREATE_OPTION_VALUE;
+        createOption.textContent = "＋ 新しい班を追加";
+        groupSelect.appendChild(createOption);
+        updateGroupLabel();
+        updateDeleteButtonState();
+      }
+
+      function updateDeleteButtonState() {
+        deleteButton.disabled = !currentTeamKey || !teams.has(currentTeamKey);
+      }
+
+      function renderMembers() {
+        ensureSelection();
+        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        memberList.innerHTML = "";
+        if (!team || team.members.length === 0) {
+          emptyState.hidden = false;
+          updateDeleteButtonState();
+          return;
+        }
+        emptyState.hidden = true;
+        team.members.forEach((member, index) => {
+          const item = document.createElement("li");
+          item.className = "member-item";
+          item.dataset.index = String(index);
+
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "member-name";
+          nameSpan.textContent = member;
+
+          const actions = document.createElement("div");
+          actions.className = "member-actions";
+
+          const upButton = document.createElement("button");
+          upButton.type = "button";
+          upButton.className = "secondary move-up";
+          upButton.textContent = "▲";
+
+          const downButton = document.createElement("button");
+          downButton.type = "button";
+          downButton.className = "secondary move-down";
+          downButton.textContent = "▼";
+
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "danger remove";
+          removeButton.textContent = "削除";
+
+          actions.appendChild(upButton);
+          actions.appendChild(downButton);
+          actions.appendChild(removeButton);
+
+          item.appendChild(nameSpan);
+          item.appendChild(actions);
+          memberList.appendChild(item);
+        });
+        updateDeleteButtonState();
+      }
+
+      function addMember(name) {
+        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        if (!team) {
+          return;
+        }
+        const trimmed = name.trim();
+        if (!trimmed) {
+          return;
+        }
+        team.members.push(trimmed);
+        renderMembers();
+      }
+
+      function moveMember(index, direction) {
+        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        if (!team) {
+          return;
+        }
+        const targetIndex = direction === "up" ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= team.members.length) {
+          return;
+        }
+        const temp = team.members[index];
+        team.members[index] = team.members[targetIndex];
+        team.members[targetIndex] = temp;
+        renderMembers();
+      }
+
+      function removeMember(index) {
+        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        if (!team) {
+          return;
+        }
+        team.members.splice(index, 1);
+        renderMembers();
+      }
+
+      groupSelect.addEventListener("change", (event) => {
+        const value = event.target.value;
+        if (value === CREATE_OPTION_VALUE) {
+          const input = window.prompt("新しい班の名称を入力してください。");
+          if (!input) {
+            refreshGroupOptions();
+            renderMembers();
+            return;
+          }
+          const trimmed = input.trim();
+          if (!trimmed) {
+            refreshGroupOptions();
+            renderMembers();
+            return;
+          }
+          if (!teams.has(trimmed)) {
+            teams.set(trimmed, { key: trimmed, label: trimmed, members: [] });
+            teamOrder.push(trimmed);
+          }
+          currentTeamKey = trimmed;
+          refreshGroupOptions();
+          renderMembers();
+          return;
+        }
+        if (!teams.has(value)) {
+          return;
+        }
+        currentTeamKey = value;
+        refreshGroupOptions();
+        renderMembers();
+      });
+
+      memberList.addEventListener("click", (event) => {
+        const button = event.target.closest("button");
+        if (!button) {
+          return;
+        }
+        const item = button.closest(".member-item");
+        if (!item) {
+          return;
+        }
+        const index = Number.parseInt(item.dataset.index || "-1", 10);
+        if (Number.isNaN(index)) {
+          return;
+        }
+        if (button.classList.contains("move-up")) {
+          moveMember(index, "up");
+        } else if (button.classList.contains("move-down")) {
+          moveMember(index, "down");
+        } else if (button.classList.contains("remove")) {
+          removeMember(index);
+        }
+      });
+
+      addMemberButton.addEventListener("click", () => {
+        if (memberInput.value.trim()) {
+          addMember(memberInput.value);
+          memberInput.value = "";
+          memberInput.focus();
+        }
+      });
+
+      memberInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          if (memberInput.value.trim()) {
+            addMember(memberInput.value);
+            memberInput.value = "";
+          }
+        }
+      });
+
+      saveButton.addEventListener("click", () => {
+        ensureSelection();
+        if (!currentTeamKey || !teams.has(currentTeamKey)) {
+          alert("保存対象の班を選択してください。");
+          return;
+        }
+        const team = teams.get(currentTeamKey);
+        fetch(saveUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ team_key: team.key, members: team.members }),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to save: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then(() => {
+            notifyParent();
+            window.close();
+          })
+          .catch((error) => {
+            console.error(error);
+            alert("保存に失敗しました。時間をおいて再度お試しください。");
+          });
+      });
+
+      deleteButton.addEventListener("click", () => {
+        ensureSelection();
+        if (!currentTeamKey || !teams.has(currentTeamKey)) {
+          return;
+        }
+        const team = teams.get(currentTeamKey);
+        if (!window.confirm(`「${team.label}」のデフォルト順を削除しますか？`)) {
+          return;
+        }
+        fetch(deleteUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ team_key: team.key }),
+        })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to delete: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then(() => {
+            teams.delete(team.key);
+            teamOrder = teamOrder.filter((key) => key !== team.key);
+            notifyParent();
+            ensureSelection();
+            refreshGroupOptions();
+            renderMembers();
+          })
+          .catch((error) => {
+            console.error(error);
+            alert("削除に失敗しました。時間をおいて再度お試しください。");
+          });
+      });
+
+      closeButton.addEventListener("click", () => {
+        window.close();
+      });
+
+      refreshGroupOptions();
+      renderMembers();
+    </script>
+  </body>
+</html>
