@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import threading
 import uuid
 import zipfile
@@ -48,6 +49,44 @@ ORDER_FILE = DATA_DIR / "order.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
+
+
+def _cleanup_data_directories() -> None:
+    """Remove generated files from the data directory except for order.json."""
+
+    for directory in (UPLOAD_DIR, WORK_DIR):
+        if not directory.exists():
+            continue
+        for path in directory.iterdir():
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    continue
+        directory.mkdir(parents=True, exist_ok=True)
+
+
+def _schedule_delayed_cleanup(delay_seconds: int = 60) -> None:
+    """Schedule a cleanup of generated files after the specified delay."""
+
+    def _cleanup_task() -> None:
+        with jobs_lock:
+            active_jobs = any(
+                job.status not in {"completed", "failed"} for job in jobs.values()
+            )
+        if active_jobs:
+            _schedule_delayed_cleanup(delay_seconds)
+            return
+        _cleanup_data_directories()
+
+    timer = threading.Timer(delay_seconds, _cleanup_task)
+    timer.daemon = True
+    timer.start()
+
+
+_cleanup_data_directories()
 
 
 @dataclass
@@ -781,7 +820,13 @@ def _process_job(job_id: str) -> None:
             _update_job(job_id, progress_increment=1)
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
-        _update_job(job_id, status="completed", message="PDFの送信が完了しました。", merged_pdf=merged_path)
+        _update_job(
+            job_id,
+            status="completed",
+            message="PDFの送信が完了しました。",
+            merged_pdf=merged_path,
+        )
+        _schedule_delayed_cleanup()
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
     finally:
