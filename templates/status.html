@@ -90,6 +90,13 @@
         background: #f1f5f9;
         padding: 1.5rem;
       }
+      .status-footer {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 1.25rem;
+      }
       .download-link {
         display: inline-flex;
         align-items: center;
@@ -97,11 +104,11 @@
         background: #0b7285;
         color: #fff;
         text-decoration: none;
-        padding: 0.75rem 1.85rem;
-        border-radius: 999px;
+        padding: 0.95rem 2.2rem;
+        border-radius: 12px;
         font-weight: 600;
         font-size: 1rem;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
         white-space: nowrap;
         width: auto;
         flex-shrink: 0;
@@ -193,6 +200,9 @@
           <div id="status" class="status-value">読み込み中…</div>
           <div id="message" class="status-message"></div>
         </div>
+      </div>
+      <div class="status-footer">
+        <div id="timestamp" class="status-meta"></div>
         <a
           id="download-link"
           class="download-link"
@@ -204,7 +214,6 @@
           結合済みPDFをダウンロード
         </a>
       </div>
-      <div id="timestamp" class="status-meta"></div>
     </div>
 
     <div id="progress-wrapper" class="progress-wrapper" hidden>
