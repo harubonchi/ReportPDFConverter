@@ -1,26 +1,40 @@
 # Gain Report Emailer Web Interface
 
-This project provides a Flask-based web application that converts Word documents from an
-uploaded ZIP archive into PDF, merges them, and emails the final report to a chosen
-recipient.
+このプロジェクトは、Flask ベースの Web アプリケーションで、アップロードされた ZIP アーカイブ内の Word 文書（`.doc` / `.docx`）を PDF に変換し、結合した後に指定した宛先へメール送信します。レポート作成の手間を大幅に削減することを目的としています。
 
-## Features
+## 主な機能
 
-- Upload ZIP archives that contain `.doc` or `.docx` files.
-- Choose the order in which documents appear in the merged PDF through the web UI.
-- Background processing of extraction, conversion, merging, and emailing.
-- Remembers the most recently used order and suggests it for future uploads.
+- ZIP アーカイブをアップロードすると、含まれる Word 文書を自動的に展開します。
+- Web UI 上で PDF に結合する順番をドラッグ & ドロップで調整できます。
+- 変換・結合・メール送信をバックグラウンドで処理します。
+- 直近に使用した並び順を記憶し、次回以降のアップロード時に候補として表示します。
 
-## Prerequisites
+## 必要環境
 
-- Python 3.10+
-- LibreOffice (optional, required only for legacy `.doc` conversion).
-- SMTP credentials for sending the merged PDF via email.
+- Python 3.10 以上
+- LibreOffice（任意、`.doc` 形式のレガシー文書を扱う場合に必要）
+- PDF 変換・メール送信用にインターネット接続
+- SMTP サーバーの認証情報（メール送信に使用）
 
-## Environment variables
+## セットアップ手順
 
-Copy `.env.example` to `.env` (or set the environment variables directly) and provide
-your email credentials:
+1. 依存パッケージをインストールします。
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. 環境変数を設定します。`.env.example` をコピーして `.env` を作成し、必要な値を入力してください。
+   ```bash
+   cp .env.example .env
+   ```
+3. アプリケーションを起動します。
+   ```bash
+   python app.py
+   ```
+4. ブラウザで `http://localhost:5000` にアクセスすると、アップロード画面が表示されます。
+
+## 環境変数の設定
+
+以下の変数は必須です。`.env` に追記するか、実行環境に直接設定してください。
 
 ```
 EMAIL_SENDER=example@example.com
@@ -31,11 +45,29 @@ EMAIL_SMTP_PORT=587
 EMAIL_USE_TLS=true
 ```
 
-## Running the application
+> **注意**: `.env` には個人情報が含まれます。リポジトリにコミットしたり共有したりしないようご注意ください。
 
-```bash
-pip install -r requirements.txt
-python app.py
-```
+## 使い方
 
-The application runs on `http://localhost:5000` by default.
+1. Word 文書（`.doc` / `.docx`）を 1 つの ZIP ファイルにまとめます。
+2. Web アプリにアクセスし、ZIP ファイルをアップロードします。
+3. 必要に応じて、PDF に結合する順番を UI で並び替えます。
+4. 受信者のメールアドレスを入力し、送信ボタンを押します。
+5. 変換が完了すると、結合された PDF が添付されたメールが送信されます。
+
+## トラブルシューティングとヒント
+
+- LibreOffice がインストールされていない場合、`.doc` 形式の文書は変換できません。必要に応じてインストールしてください。
+- メールが届かない場合は、SMTP サーバー情報・ユーザー名・パスワード・ポート番号・TLS 設定が正しいか確認してください。
+- 大きなファイルや大量の文書を扱う場合、変換処理に時間がかかることがあります。ブラウザを閉じずに完了までお待ちください。
+- ログはコンソールに出力されます。問題が発生した場合は、ターミナル出力を確認してください。
+
+## セキュリティに関する注意
+
+- `.env` ファイルは開発者個人の環境で管理し、外部に共有しないでください。
+- 共有環境で利用する場合は、環境変数をシステムの秘密情報ストア（例: 環境変数管理サービス、シークレットマネージャー）に保存することを推奨します。
+- アップロードされたファイルは処理後に削除されますが、不要なファイルが残っていないか定期的に確認してください。
+
+## ライセンス
+
+ライセンス情報はリポジトリ内の `LICENSE` ファイルをご確認ください。
