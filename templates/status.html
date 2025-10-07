@@ -75,6 +75,25 @@
         background: #f1f5f9;
         padding: 1.5rem;
       }
+      .download-section {
+        margin-top: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .download-link {
+        display: inline-block;
+        background: #0b7285;
+        color: #fff;
+        text-decoration: none;
+        padding: 0.6rem 1.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        box-shadow: 0 2px 4px rgba(15, 23, 42, 0.15);
+      }
+      .download-link:hover {
+        opacity: 0.92;
+      }
       .email-template h2 {
         margin-top: 0;
         color: #0b7285;
@@ -159,6 +178,19 @@
       <div id="timestamp"></div>
     </div>
 
+    <div id="download-section" class="download-section" hidden>
+      <strong>結合済みPDFファイル:</strong>
+      <a
+        id="download-link"
+        class="download-link"
+        href="#"
+        rel="noopener"
+        download
+      >
+        結合済みPDFをダウンロード
+      </a>
+    </div>
+
     <div id="progress-wrapper" class="progress-wrapper" hidden>
       <div
         id="progress-track"
@@ -225,8 +257,11 @@
       const progressTrack = document.getElementById("progress-track");
       const progressBar = document.getElementById("progress-bar");
       const progressText = document.getElementById("progress-text");
+      const downloadSection = document.getElementById("download-section");
+      const downloadLink = document.getElementById("download-link");
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
+      const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
 
       function populateTeamOptions(options) {
         if (!teamSelect || teamOptionsInitialized) {
@@ -379,6 +414,19 @@
 
           if (data.status === "completed") {
             currentReportNumber = data.report_number || "";
+            if (downloadSection && downloadLink) {
+              const fileName = typeof data.final_pdf_name === "string" ? data.final_pdf_name : "";
+              downloadLink.textContent = fileName
+                ? `${fileName} をダウンロード`
+                : "結合済みPDFをダウンロード";
+              downloadLink.href = `${downloadUrl}?t=${Date.now()}`;
+              if (fileName) {
+                downloadLink.setAttribute("download", fileName);
+              } else {
+                downloadLink.removeAttribute("download");
+              }
+              downloadSection.hidden = false;
+            }
             if (elapsedElement) {
               if (data.elapsed_display) {
                 elapsedElement.textContent = `総経過時間: ${data.elapsed_display}`;
@@ -394,6 +442,9 @@
             return;
           }
 
+          if (downloadSection) {
+            downloadSection.hidden = true;
+          }
           if (elapsedElement) {
             elapsedElement.hidden = true;
           }

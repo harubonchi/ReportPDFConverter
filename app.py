@@ -16,11 +16,13 @@ from dotenv import load_dotenv
 from flask import (
     Flask,
     Response,
+    abort,
     flash,
     jsonify,
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 
@@ -707,17 +709,13 @@ def _process_job(job_id: str) -> None:
             send_email_with_attachment(
                 config=EMAIL_CONFIG,
                 recipient=job.email,
-                subject="結合済み報告書",
-                body=(
-                    "結合した報告書PDFを添付しています。"
-                ),
+                subject=f"第{report_number}回報告書",
+                body="",
                 attachment_path=merged_path,
             )
             _update_job(job_id, progress_increment=1)
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
-
-        order_manager.save(job.order, job.entries)
         _update_job(job_id, status="completed", message="PDFの送信が完了しました。", merged_pdf=merged_path)
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
@@ -1002,6 +1000,24 @@ def start_processing() -> str:
     executor.submit(_process_job, job_id)
 
     return render_template("status.html", job_id=job_id)
+
+
+@app.route("/download/<job_id>", methods=["GET"])
+def download_merged_pdf(job_id: str) -> Response:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job or job.status != "completed" or not job.merged_pdf:
+            abort(404)
+        file_path = job.merged_pdf
+
+    if not file_path.exists():
+        abort(404)
+
+    return send_file(
+        file_path,
+        as_attachment=True,
+        download_name=file_path.name,
+    )
 
 
 @app.route("/status/<job_id>", methods=["GET"])
