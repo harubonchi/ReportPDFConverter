@@ -1,182 +1,168 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>Arrange Document Order</title>
+    <title>ドキュメントの並び替え</title>
     <style>
+      :root {
+        color-scheme: light;
+      }
       body {
-        font-family: Arial, sans-serif;
+        font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
         margin: 2rem auto;
-        max-width: 720px;
+        max-width: 840px;
         color: #1f2933;
+        background: #f8fafc;
       }
       h1 {
         color: #0b7285;
       }
       .container {
         border: 1px solid #cbd5e1;
-        border-radius: 8px;
+        border-radius: 12px;
         padding: 1.5rem;
-        background: #f8fafc;
-      }
-      .team-summary {
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 1rem;
         background: #fff;
+        box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+      }
+      .instructions {
+        background: #e7f5ff;
+        border-left: 4px solid #0b7285;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
         margin-bottom: 1.5rem;
       }
-      .team-summary h2 {
-        margin: 0 0 0.5rem 0;
-        font-size: 1.1rem;
-      }
-      .team-summary p {
-        margin-top: 0;
-        margin-bottom: 0.75rem;
-      }
-      .team-list {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin: 0;
-        padding: 0;
-        list-style: none;
-      }
-      .team-pill {
-        border: 1px solid #0b7285;
-        background: #e3fafc;
-        color: #0b7285;
-        padding: 0.35rem 0.75rem;
-        border-radius: 999px;
-        cursor: grab;
-        font-size: 0.9rem;
-      }
-      .team-pill:focus {
-        outline: none;
-        box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.2);
-      }
-      .team-pill:hover {
-        background: #c5f6fa;
-      }
-      .team-pill.dragging {
-        opacity: 0.6;
-        cursor: grabbing;
-      }
-      .team-pill.ungrouped {
-        border-color: #495057;
-        color: #495057;
-        background: #f1f3f5;
-      }
-      .document-board {
-        border: 1px dashed #94a3b8;
-        border-radius: 8px;
-        background: #fff;
-        padding: 0.75rem;
-        max-height: 420px;
-        overflow-y: auto;
-        margin-top: 0.75rem;
-      }
-      .document-list {
-        list-style: none;
-        margin: 0;
-        padding: 0;
+      .team-board {
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
+        gap: 1rem;
       }
-      .document-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
+      .team-block {
         border: 1px solid #cbd5e1;
-        border-radius: 6px;
-        padding: 0.65rem 0.9rem;
+        border-radius: 10px;
         background: #fdfdfd;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
         cursor: grab;
       }
-      .document-item:focus {
+      .team-block:focus-within {
         outline: none;
         box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.25);
       }
-      .document-item.dragging {
-        opacity: 0.6;
+      .team-block.dragging {
+        opacity: 0.75;
         cursor: grabbing;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
       }
-      .document-item.is-selected {
-        border-color: #0b7285;
-        box-shadow: 0 0 0 2px rgba(11, 114, 133, 0.3);
+      .team-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .team-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0b7285;
+      }
+      .team-count {
+        font-size: 0.85rem;
+        background: #0b7285;
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.2rem 0.75rem;
+      }
+      .document-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+      }
+      .document-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 0.6rem 0.9rem;
+        background: #fff;
+      }
+      .document-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
       }
       .doc-title {
         font-weight: 600;
-        margin-right: 1rem;
       }
-      .team-badge {
-        background: #e3fafc;
-        color: #0b7285;
-        border-radius: 999px;
-        padding: 0.25rem 0.65rem;
-        font-size: 0.75rem;
-        font-weight: 600;
-        white-space: nowrap;
-      }
-      .team-badge.ungrouped {
-        background: #f1f3f5;
+      .doc-team-label {
+        font-size: 0.8rem;
         color: #495057;
       }
-      .list-hint {
-        font-size: 0.9rem;
-        color: #495057;
-        margin-top: 0.35rem;
+      .doc-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .doc-actions button {
+        background: #0b7285;
+        border: none;
+        color: #fff;
+        padding: 0.35rem 0.55rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .doc-actions button.secondary {
+        background: #495057;
+      }
+      .doc-actions button.danger {
+        background: #fa5252;
       }
       .controls {
-        margin-top: 1rem;
+        margin-top: 1.5rem;
         display: flex;
-        gap: 0.5rem;
         flex-wrap: wrap;
+        gap: 0.75rem;
       }
-      button {
+      .controls button {
         background-color: #0b7285;
         border: none;
         color: white;
-        padding: 0.6rem 1.2rem;
+        padding: 0.75rem 1.5rem;
         font-size: 1rem;
-        border-radius: 4px;
+        border-radius: 6px;
         cursor: pointer;
       }
-      button.secondary {
+      .controls button.secondary {
         background: #495057;
       }
-      button:hover {
-        opacity: 0.9;
+      .controls button:hover,
+      .doc-actions button:hover {
+        opacity: 0.92;
+      }
+      @media (max-width: 640px) {
+        body {
+          margin: 1rem;
+        }
+        .doc-actions {
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .doc-actions button {
+          flex: 1 0 30%;
+        }
       }
     </style>
   </head>
   <body>
-    <h1>Arrange the document order</h1>
-    <p>
-      Use the controls below to choose the order of the Word documents. The selected order
-      will be saved and used as the default the next time you upload a report.
-    </p>
-
-    {% if team_summaries %}
-      <div class="team-summary">
-        <h2>Detected teams</h2>
-        <p>Click a team to jump to its first document. Drag the chips to reorder the team blocks.</p>
-        <div class="team-list">
-          {% for summary in team_summaries %}
-            <button
-              type="button"
-              class="team-pill{% if not summary.name %} ungrouped{% endif %}"
-              data-team="{{ summary.name if summary.name else '' }}"
-              data-key="{{ summary.name if summary.name else '__ungrouped__' }}"
-              draggable="true"
-            >
-              {{ summary.name if summary.name else 'Ungrouped' }} · {{ summary.count }}
-            </button>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
+    <h1>ドキュメントの並べ替え</h1>
+    <div class="instructions">
+      <p>
+        班（フォルダー）単位の並び替えはドラッグ＆ドロップで行い、班の中の個人ファイルは上下ボタンで並び替えてください。
+        不要なファイルは「削除」ボタンで除外できます。並び順は次回以降のアップロード時に自動で再現されます。
+      </p>
+    </div>
 
     <div class="container">
       <form action="{{ url_for('start_processing') }}" method="post" id="order-form">
@@ -184,318 +170,241 @@
         <input type="hidden" name="email" value="{{ email }}" />
         <input type="hidden" name="order" id="order-input" />
 
-        <label for="document-list">Document order</label>
-        <p class="list-hint">Drag and drop the documents to arrange them in the desired order.</p>
-        <div class="document-board">
-          <ul id="document-list" class="document-list">
-            {% for name in ordered_display_names %}
-              {% set entry = entry_map[name] %}
-              <li
-                class="document-item"
-                draggable="true"
-                data-name="{{ name }}"
-                data-team="{{ entry.team_name or '' }}"
-                tabindex="0"
-              >
-                <span class="doc-title">{{ name }}</span>
-                <span class="team-badge{% if not entry.team_name %} ungrouped{% endif %}">
-                  {{ entry.team_name if entry.team_name else 'Ungrouped' }}
-                </span>
-              </li>
-            {% endfor %}
-          </ul>
+        <div id="team-board" class="team-board">
+          {% for block in team_blocks %}
+            <div class="team-block" data-team-key="{{ block.key }}" draggable="true">
+              <div class="team-header">
+                <span class="team-title">{{ block.label }}</span>
+                <span class="team-count" data-count>{{ block.count }} 件</span>
+              </div>
+              <ul class="document-list">
+                {% for entry in block.entries %}
+                  <li
+                    class="document-item"
+                    data-name="{{ entry.display_name }}"
+                    data-team="{{ entry.team }}"
+                    draggable="false"
+                  >
+                    <div class="document-info">
+                      <span class="doc-title">{{ entry.display_name }}</span>
+                    </div>
+                    <div class="doc-actions">
+                      <button type="button" class="secondary move-up" aria-label="上に移動">▲</button>
+                      <button type="button" class="secondary move-down" aria-label="下に移動">▼</button>
+                      <button type="button" class="danger remove" aria-label="リストから削除">削除</button>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endfor %}
         </div>
 
         <div class="controls">
-          <button type="button" class="secondary" id="reset-button">Reset order</button>
-          <button type="submit">Start background processing</button>
+          <button type="button" class="secondary" id="reset-button">最初の並びに戻す</button>
+          <button type="submit">PDF 変換と送信を開始</button>
         </div>
       </form>
     </div>
 
-    <script type="application/json" id="initial-order-data">{{ ordered_display_names | tojson }}</script>
-    <script type="application/json" id="initial-team-order">{{ team_order_keys | tojson }}</script>
+    <script type="application/json" id="initial-state">{{ initial_state | tojson }}</script>
 
     <script>
-      const documentList = document.getElementById("document-list");
+      const teamBoard = document.getElementById("team-board");
       const orderInput = document.getElementById("order-input");
-      const form = document.getElementById("order-form");
       const resetButton = document.getElementById("reset-button");
-      const initialOrderElement = document.getElementById("initial-order-data");
-      const initialOrder = initialOrderElement ? JSON.parse(initialOrderElement.textContent) : [];
-      const initialTeamOrderElement = document.getElementById("initial-team-order");
-      const initialTeamOrder = initialTeamOrderElement ? JSON.parse(initialTeamOrderElement.textContent) : [];
-      const teamContainer = document.querySelector(".team-list");
-      const teamKeyToActual = new Map();
-
-      if (teamContainer) {
-        Array.from(teamContainer.querySelectorAll(".team-pill")).forEach((pill) => {
-          teamKeyToActual.set(pill.dataset.key, pill.dataset.team || "");
-        });
-      }
-      teamKeyToActual.set("__ungrouped__", "");
-
-      let draggedItem = null;
-      let draggingTeamPill = null;
-      let selectedItem = null;
+      const form = document.getElementById("order-form");
+      const initialStateElement = document.getElementById("initial-state");
+      const initialState = initialStateElement ? JSON.parse(initialStateElement.textContent) : [];
 
       function updateOrderInput() {
-        const values = Array.from(documentList.querySelectorAll(".document-item")).map((item) => item.dataset.name);
-        orderInput.value = values.join("|");
+        const names = [];
+        teamBoard.querySelectorAll(".team-block").forEach((block) => {
+          block.querySelectorAll(".document-item").forEach((item) => {
+            names.push(item.dataset.name);
+          });
+        });
+        orderInput.value = names.join("|");
       }
 
-      function clearSelection() {
-        if (selectedItem) {
-          selectedItem.classList.remove("is-selected");
-          selectedItem = null;
+      function updateTeamCounts(block) {
+        const countElement = block.querySelector("[data-count]");
+        if (countElement) {
+          const total = block.querySelectorAll(".document-item").length;
+          countElement.textContent = `${total} 件`;
         }
       }
 
-      function setSelectedItem(item) {
-        if (selectedItem === item) {
+      function removeTeamBlockIfEmpty(block) {
+        if (block.querySelectorAll(".document-item").length === 0) {
+          block.remove();
+        }
+      }
+
+      function handleMove(item, direction) {
+        const sibling = direction === "up" ? item.previousElementSibling : item.nextElementSibling;
+        if (!sibling) {
           return;
         }
-        clearSelection();
-        selectedItem = item;
-        if (selectedItem) {
-          selectedItem.classList.add("is-selected");
+        if (direction === "up") {
+          item.parentElement.insertBefore(item, sibling);
+        } else {
+          item.parentElement.insertBefore(sibling, item);
         }
+        updateTeamCounts(item.closest(".team-block"));
+        updateOrderInput();
       }
 
-      function focusTeam(teamKey) {
-        const actualTeam = teamKey === "__ungrouped__" ? "" : teamKeyToActual.get(teamKey) ?? teamKey;
-        const target = Array.from(documentList.querySelectorAll(".document-item")).find(
-          (item) => (item.dataset.team || "") === actualTeam,
-        );
-        if (target) {
-          setSelectedItem(target);
-          target.scrollIntoView({ behavior: "smooth", block: "center" });
-          if (typeof target.focus === "function") {
-            try {
-              target.focus({ preventScroll: true });
-            } catch (error) {
-              target.focus();
-            }
-          }
+      teamBoard.addEventListener("click", (event) => {
+        const target = event.target.closest("button");
+        if (!target) {
+          return;
         }
-      }
-
-      function reorderDocumentsByTeam(teamKeys) {
-        if (!teamKeys.length) {
+        const item = target.closest(".document-item");
+        const block = target.closest(".team-block");
+        if (!item || !block) {
+          return;
+        }
+        if (target.classList.contains("move-up")) {
+          handleMove(item, "up");
+        } else if (target.classList.contains("move-down")) {
+          handleMove(item, "down");
+        } else if (target.classList.contains("remove")) {
+          item.remove();
+          updateTeamCounts(block);
+          removeTeamBlockIfEmpty(block);
           updateOrderInput();
-          return;
         }
-        const grouped = new Map();
-        const items = Array.from(documentList.querySelectorAll(".document-item"));
-        items.forEach((item) => {
-          const team = item.dataset.team || "";
-          if (!grouped.has(team)) {
-            grouped.set(team, []);
-          }
-          grouped.get(team).push(item);
-        });
-
-        const orderedItems = [];
-        teamKeys.forEach((key) => {
-          const actualTeam = key === "__ungrouped__" ? "" : teamKeyToActual.get(key) ?? key;
-          const groupItems = grouped.get(actualTeam) || [];
-          orderedItems.push(...groupItems);
-          grouped.delete(actualTeam);
-        });
-
-        grouped.forEach((groupItems) => {
-          orderedItems.push(...groupItems);
-        });
-
-        documentList.replaceChildren(...orderedItems);
-        updateOrderInput();
-      }
-
-      function resetTeamChips() {
-        if (!teamContainer || !initialTeamOrder.length) {
-          return;
-        }
-        const pillMap = new Map();
-        Array.from(teamContainer.querySelectorAll(".team-pill")).forEach((pill) => {
-          pillMap.set(pill.dataset.key, pill);
-        });
-        const ordered = [];
-        initialTeamOrder.forEach((key) => {
-          const pill = pillMap.get(key);
-          if (pill) {
-            ordered.push(pill);
-            pillMap.delete(key);
-          }
-        });
-        ordered.push(...pillMap.values());
-        teamContainer.replaceChildren(...ordered);
-      }
-
-      function resetToOriginal() {
-        const itemMap = new Map();
-        Array.from(documentList.querySelectorAll(".document-item")).forEach((item) => {
-          itemMap.set(item.dataset.name, item);
-        });
-        const orderedItems = [];
-        initialOrder.forEach((name) => {
-          const item = itemMap.get(name);
-          if (item) {
-            orderedItems.push(item);
-            itemMap.delete(name);
-          }
-        });
-        orderedItems.push(...itemMap.values());
-        documentList.replaceChildren(...orderedItems);
-        clearSelection();
-        resetTeamChips();
-        updateOrderInput();
-      }
-
-      documentList.addEventListener("dragstart", (event) => {
-        const item = event.target.closest(".document-item");
-        if (!item) {
-          return;
-        }
-        draggedItem = item;
-        item.classList.add("dragging");
-        setSelectedItem(item);
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", item.dataset.name);
       });
 
-      documentList.addEventListener("dragover", (event) => {
-        if (!draggedItem) {
+      let draggingTeam = null;
+
+      teamBoard.addEventListener("dragstart", (event) => {
+        const block = event.target.closest(".team-block");
+        if (!block) {
+          return;
+        }
+        draggingTeam = block;
+        block.classList.add("dragging");
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", block.dataset.teamKey || "");
+      });
+
+      teamBoard.addEventListener("dragover", (event) => {
+        if (!draggingTeam) {
           return;
         }
         event.preventDefault();
-        const target = event.target.closest(".document-item");
-        if (!target) {
-          const rect = documentList.getBoundingClientRect();
-          const shouldAppend = event.clientY - rect.top > rect.height / 2;
-          if (shouldAppend) {
-            documentList.appendChild(draggedItem);
-          } else if (documentList.firstElementChild) {
-            documentList.insertBefore(draggedItem, documentList.firstElementChild);
-          }
+        const block = event.target.closest(".team-block");
+        if (!block || block === draggingTeam) {
           return;
         }
-        if (target === draggedItem) {
-          return;
-        }
-        const rect = target.getBoundingClientRect();
-        const shouldInsertBefore = event.clientY - rect.top < rect.height / 2;
-        documentList.insertBefore(draggedItem, shouldInsertBefore ? target : target.nextElementSibling);
+        const rect = block.getBoundingClientRect();
+        const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
+        teamBoard.insertBefore(draggingTeam, shouldInsertBefore ? block : block.nextElementSibling);
       });
 
-      documentList.addEventListener("drop", (event) => {
-        if (draggedItem) {
-          event.preventDefault();
-        }
-      });
-
-      documentList.addEventListener("dragend", () => {
-        if (!draggedItem) {
+      teamBoard.addEventListener("dragend", () => {
+        if (!draggingTeam) {
           return;
         }
-        draggedItem.classList.remove("dragging");
-        draggedItem = null;
+        draggingTeam.classList.remove("dragging");
+        draggingTeam = null;
         updateOrderInput();
       });
 
-      documentList.addEventListener("click", (event) => {
-        const item = event.target.closest(".document-item");
-        if (item) {
-          setSelectedItem(item);
+      teamBoard.addEventListener("drop", (event) => {
+        if (draggingTeam) {
+          event.preventDefault();
         }
       });
 
-      documentList.addEventListener("keydown", (event) => {
-        const item = event.target.closest(".document-item");
-        if (!item) {
-          return;
-        }
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          setSelectedItem(item);
-        }
-      });
+      function rebuildFromState(state) {
+        teamBoard.innerHTML = "";
+        state.forEach((team) => {
+          const block = document.createElement("div");
+          block.className = "team-block";
+          block.setAttribute("data-team-key", team.key);
+          block.setAttribute("draggable", "true");
 
-      if (teamContainer) {
-        teamContainer.addEventListener("click", (event) => {
-          const pill = event.target.closest(".team-pill");
-          if (!pill) {
-            return;
-          }
-          focusTeam(pill.dataset.key);
-        });
+          const header = document.createElement("div");
+          header.className = "team-header";
+          const title = document.createElement("span");
+          title.className = "team-title";
+          title.textContent = team.label;
+          const count = document.createElement("span");
+          count.className = "team-count";
+          count.setAttribute("data-count", "");
+          header.appendChild(title);
+          header.appendChild(count);
+          block.appendChild(header);
 
-        teamContainer.addEventListener("keydown", (event) => {
-          const pill = event.target.closest(".team-pill");
-          if (!pill) {
-            return;
-          }
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            focusTeam(pill.dataset.key);
-          }
-        });
+          const list = document.createElement("ul");
+          list.className = "document-list";
+          team.entries.forEach((entry) => {
+            const item = document.createElement("li");
+            item.className = "document-item";
+            item.dataset.name = entry.display_name;
+            item.dataset.team = entry.team || "";
+            item.setAttribute("draggable", "false");
 
-        teamContainer.addEventListener("dragstart", (event) => {
-          const pill = event.target.closest(".team-pill");
-          if (!pill) {
-            return;
-          }
-          draggingTeamPill = pill;
-          pill.classList.add("dragging");
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", pill.dataset.key);
-        });
+            const info = document.createElement("div");
+            info.className = "document-info";
+            const titleSpan = document.createElement("span");
+            titleSpan.className = "doc-title";
+            titleSpan.textContent = entry.display_name;
+            info.appendChild(titleSpan);
 
-        teamContainer.addEventListener("dragover", (event) => {
-          if (!draggingTeamPill) {
-            return;
-          }
-          event.preventDefault();
-          const pill = event.target.closest(".team-pill");
-          if (!pill || pill === draggingTeamPill) {
-            return;
-          }
-          const rect = pill.getBoundingClientRect();
-          const shouldInsertBefore = event.clientX - rect.left < rect.width / 2;
-          teamContainer.insertBefore(draggingTeamPill, shouldInsertBefore ? pill : pill.nextElementSibling);
-        });
+            const actions = document.createElement("div");
+            actions.className = "doc-actions";
 
-        teamContainer.addEventListener("drop", (event) => {
-          if (draggingTeamPill) {
-            event.preventDefault();
-          }
-        });
+            const upButton = document.createElement("button");
+            upButton.type = "button";
+            upButton.className = "secondary move-up";
+            upButton.setAttribute("aria-label", "上に移動");
+            upButton.textContent = "▲";
 
-        teamContainer.addEventListener("dragend", () => {
-          if (!draggingTeamPill) {
-            return;
-          }
-          draggingTeamPill.classList.remove("dragging");
-          draggingTeamPill = null;
-          const teamKeys = Array.from(teamContainer.querySelectorAll(".team-pill")).map((pill) => pill.dataset.key);
-          reorderDocumentsByTeam(teamKeys);
+            const downButton = document.createElement("button");
+            downButton.type = "button";
+            downButton.className = "secondary move-down";
+            downButton.setAttribute("aria-label", "下に移動");
+            downButton.textContent = "▼";
+
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "danger remove";
+            removeButton.setAttribute("aria-label", "リストから削除");
+            removeButton.textContent = "削除";
+
+            actions.appendChild(upButton);
+            actions.appendChild(downButton);
+            actions.appendChild(removeButton);
+
+            item.appendChild(info);
+            item.appendChild(actions);
+            list.appendChild(item);
+          });
+
+          block.appendChild(list);
+          teamBoard.appendChild(block);
+          updateTeamCounts(block);
         });
+        updateOrderInput();
       }
 
       resetButton.addEventListener("click", () => {
-        resetToOriginal();
+        rebuildFromState(initialState);
       });
 
       form.addEventListener("submit", (event) => {
         updateOrderInput();
         if (!orderInput.value) {
           event.preventDefault();
-          alert("Please select at least one document.");
+          alert("少なくとも1つのドキュメントを残してください。");
         }
       });
 
-      updateOrderInput();
-      window.focusTeam = focusTeam;
+      rebuildFromState(initialState);
     </script>
   </body>
 </html>

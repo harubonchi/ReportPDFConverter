@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import uuid
 import zipfile
@@ -46,38 +47,152 @@ class ZipEntry:
     display_name: str
     archive_name: str
     team_name: str | None = None
+    persons: List[str] | None = None
 
+
+UNGROUPED_TEAM_KEY = "__ungrouped__"
+
+
+@dataclass
+class OrderPreferences:
+    team_sequence: List[str]
+    member_sequences: Dict[str, List[str]]
+
+    @classmethod
+    def empty(cls) -> "OrderPreferences":
+        return cls(team_sequence=[], member_sequences={})
+
+    def to_dict(self) -> Dict[str, List[str]]:
+        return {
+            "team_sequence": self.team_sequence,
+            "member_sequences": self.member_sequences,
+        }
 
 class OrderManager:
     def __init__(self, storage_file: Path) -> None:
         self.storage_file = storage_file
         self._lock = threading.Lock()
 
-    def load(self) -> List[str]:
+    def load_preferences(self) -> OrderPreferences:
         if not self.storage_file.exists():
-            return []
+            return OrderPreferences.empty()
         try:
             with self.storage_file.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            if isinstance(data, list) and all(isinstance(item, str) for item in data):
-                return data
         except json.JSONDecodeError:
-            pass
-        return []
+            return OrderPreferences.empty()
 
-    def save(self, order: List[str]) -> None:
+        if isinstance(data, dict):
+            team_sequence = [
+                team
+                for team in data.get("team_sequence", [])
+                if isinstance(team, str)
+            ]
+            member_sequences: Dict[str, List[str]] = {}
+            raw_members = data.get("member_sequences", {})
+            if isinstance(raw_members, dict):
+                for key, value in raw_members.items():
+                    if isinstance(key, str) and isinstance(value, list):
+                        member_sequences[key] = [
+                            name for name in value if isinstance(name, str)
+                        ]
+            return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
+
+        if isinstance(data, list) and all(isinstance(item, str) for item in data):
+            return self._from_legacy_list(data)
+
+        return OrderPreferences.empty()
+
+    def _from_legacy_list(self, items: List[str]) -> OrderPreferences:
+        member_sequences: Dict[str, List[str]] = {}
+        team_sequence: List[str] = []
+        for name in items:
+            team_key = UNGROUPED_TEAM_KEY
+            if name.startswith("[") and "]" in name:
+                prefix, _, remainder = name.partition("]")
+                team_name = prefix[1:]
+                team_key = team_name or UNGROUPED_TEAM_KEY
+                stripped = remainder.strip()
+            else:
+                stripped = name
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+            member_sequences.setdefault(team_key, [])
+            if stripped and stripped not in member_sequences[team_key]:
+                member_sequences[team_key].append(stripped)
+        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
+
+    def save(self, order: List[str], entries: Dict[str, ZipEntry]) -> None:
+        preferences = self._build_preferences(order, entries)
         with self._lock:
             self.storage_file.parent.mkdir(parents=True, exist_ok=True)
             with self.storage_file.open("w", encoding="utf-8") as fh:
-                json.dump(order, fh, ensure_ascii=False, indent=2)
+                json.dump(preferences.to_dict(), fh, ensure_ascii=False, indent=2)
 
-    def initial_order(self, file_names: List[str]) -> List[str]:
-        stored = self.load()
-        ordered: List[str] = [name for name in stored if name in file_names]
-        for name in sorted(file_names):
-            if name not in ordered:
-                ordered.append(name)
-        return ordered
+    def _build_preferences(self, order: List[str], entries: Dict[str, ZipEntry]) -> OrderPreferences:
+        team_sequence: List[str] = []
+        member_sequences: Dict[str, List[str]] = {}
+
+        for display_name in order:
+            entry = entries.get(display_name)
+            if not entry:
+                continue
+            team_key = entry.team_name or UNGROUPED_TEAM_KEY
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+            member_list = member_sequences.setdefault(team_key, [])
+            persons = entry.persons or []
+            if not persons:
+                continue
+            for person in persons:
+                if person not in member_list:
+                    member_list.append(person)
+
+        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
+
+    def initial_layout(self, entries: List[ZipEntry]) -> tuple[List[str], Dict[str, List[ZipEntry]]]:
+        preferences = self.load_preferences()
+        team_map: Dict[str, List[ZipEntry]] = {}
+        team_appearance: List[str] = []
+
+        for entry in entries:
+            team_key = entry.team_name or UNGROUPED_TEAM_KEY
+            team_map.setdefault(team_key, []).append(entry)
+            if team_key not in team_appearance:
+                team_appearance.append(team_key)
+
+        team_sequence: List[str] = []
+        for team_key in preferences.team_sequence:
+            if team_key in team_map and team_key not in team_sequence:
+                team_sequence.append(team_key)
+        for team_key in team_appearance:
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+
+        ordered_entries: Dict[str, List[ZipEntry]] = {}
+        for team_key in team_sequence:
+            members = preferences.member_sequences.get(team_key, [])
+            items = team_map.get(team_key, [])
+            ordered_entries[team_key] = self._sort_team_entries(items, members)
+
+        return team_sequence, ordered_entries
+
+    def _sort_team_entries(self, items: List[ZipEntry], member_order: List[str]) -> List[ZipEntry]:
+        if not items:
+            return []
+
+        fallback_positions = {
+            entry.identifier: index for index, entry in enumerate(sorted(items, key=lambda e: e.display_name.lower()))
+        }
+
+        def sort_key(entry: ZipEntry) -> tuple[int, int]:
+            persons = entry.persons or []
+            indices = [member_order.index(person) for person in persons if person in member_order]
+            if indices:
+                return (0, min(indices))
+            return (1, fallback_positions[entry.identifier])
+
+        return sorted(items, key=sort_key)
 
 
 order_manager = OrderManager(ORDER_FILE)
@@ -134,12 +249,51 @@ def _append_duplicate_suffix(base_name: str, counter: int) -> str:
     return f"{path.stem} ({counter}){path.suffix}"
 
 
+def _sanitize_report_filename(original_name: str) -> str:
+    path = Path(original_name)
+    name = path.name
+
+    name = re.sub(r"[,，、]", "・", name)
+    name = re.sub(r"[₋_＿\s]+", " ", name)
+    name = re.sub(r"報告会", "報告書", name)
+    name = re.sub(r"\s+", " ", name).strip()
+
+    if "回" in name and "報告書" not in name:
+        pos = name.find("回")
+        if pos != -1:
+            insert_pos = pos + 1
+            name = name[:insert_pos] + "報告書" + name[insert_pos:]
+
+    if "報告書" not in name:
+        name = name.replace("回 ", "回報告書 ")
+
+    return name
+
+
+def _extract_person_names(sanitized_name: str) -> List[str]:
+    stem = Path(sanitized_name).stem
+    if "報告書" in stem:
+        _, _, remainder = stem.partition("報告書")
+    else:
+        remainder = stem
+    remainder = remainder.strip()
+    if not remainder:
+        return []
+    tokens = re.split(r"[・,，、\s]+", remainder)
+    persons = [token.strip() for token in tokens if token.strip()]
+    return persons
+
+
+def _team_display_label(team_key: str) -> str:
+    return "班なし" if team_key == UNGROUPED_TEAM_KEY else team_key
+
+
 def _build_display_name(
-    original_name: str,
+    sanitized_name: str,
     team_name: str | None,
     duplicate_counter: Dict[str, int],
 ) -> str:
-    base_name = Path(original_name).name
+    base_name = Path(sanitized_name).name
     if team_name:
         prefix = f"[{team_name}] "
         if base_name.startswith(prefix):
@@ -182,7 +336,9 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
         if team_level is not None and len(directories) > team_level:
             team_name = directories[team_level]
 
-        display_name = _build_display_name(path.name, team_name, duplicate_counter)
+        sanitized_name = _sanitize_report_filename(path.name)
+        display_name = _build_display_name(sanitized_name, team_name, duplicate_counter)
+        persons = _extract_person_names(sanitized_name)
 
         entries.append(
             ZipEntry(
@@ -190,6 +346,7 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
                 display_name=display_name,
                 archive_name=str(path),
                 team_name=team_name,
+                persons=persons,
             )
         )
 
@@ -296,7 +453,7 @@ def _process_job(job_id: str) -> None:
         else:
             raise RuntimeError("Email configuration is incomplete. Please update environment variables.")
 
-        order_manager.save(job.order)
+        order_manager.save(job.order, job.entries)
         _update_job(job_id, status="completed", message="Report emailed successfully.", merged_pdf=merged_path)
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=str(exc))
@@ -306,7 +463,18 @@ def _process_job(job_id: str) -> None:
 
 @app.route("/", methods=["GET"])
 def index() -> str:
-    saved_order = order_manager.load()
+    preferences = order_manager.load_preferences()
+    saved_order: List[str] = []
+    for team_key in preferences.team_sequence:
+        members = preferences.member_sequences.get(team_key, [])
+        if not members:
+            continue
+        label = _team_display_label(team_key)
+        for person in members:
+            if team_key == UNGROUPED_TEAM_KEY:
+                saved_order.append(person)
+            else:
+                saved_order.append(f"[{label}] {person}")
     return render_template("index.html", saved_order=saved_order)
 
 
@@ -333,43 +501,58 @@ def prepare_upload() -> Response | str:
         return redirect(url_for("index"))
 
     entry_map: Dict[str, ZipEntry] = {entry.display_name: entry for entry in entries}
-    ordered_display_names = order_manager.initial_order([entry.display_name for entry in entries])
+    team_sequence, team_entries = order_manager.initial_layout(list(entry_map.values()))
+    ordered_display_names: List[str] = []
+    team_blocks: List[Dict[str, object]] = []
+
+    for team_key in team_sequence:
+        items = team_entries.get(team_key, [])
+        if not items:
+            continue
+        block_entries = []
+        for item in items:
+            ordered_display_names.append(item.display_name)
+            block_entries.append(
+                {
+                    "display_name": item.display_name,
+                    "team": item.team_name or "",
+                    "persons": item.persons or [],
+                }
+            )
+        team_blocks.append(
+            {
+                "key": team_key,
+                "label": _team_display_label(team_key),
+                "count": len(block_entries),
+                "entries": block_entries,
+            }
+        )
+
     upload_sessions[job_id] = entry_map
 
-    team_counts: Dict[str, int] = {}
-    team_order: List[str] = []
-    ungrouped_count = 0
-    for display_name in ordered_display_names:
-        entry = entry_map.get(display_name)
-        if not entry:
-            continue
-        if entry.team_name:
-            team_counts[entry.team_name] = team_counts.get(entry.team_name, 0) + 1
-            if entry.team_name not in team_order:
-                team_order.append(entry.team_name)
-        else:
-            ungrouped_count += 1
-
-    team_summaries = [
-        {"name": team_name, "count": team_counts[team_name]}
-        for team_name in team_order
+    initial_state = [
+        {
+            "key": block["key"],
+            "label": block["label"],
+            "entries": [
+                {
+                    "display_name": entry["display_name"],
+                    "team": entry["team"],
+                    "persons": entry.get("persons", []),
+                }
+                for entry in block["entries"]
+            ],
+        }
+        for block in team_blocks
     ]
-    if team_order and ungrouped_count:
-        team_summaries.append({"name": None, "count": ungrouped_count})
-
-    team_order_keys = list(team_order)
-    if ungrouped_count:
-        team_order_keys.append("__ungrouped__")
 
     return render_template(
         "order.html",
         job_id=job_id,
         email=email,
         ordered_display_names=ordered_display_names,
-        entry_map=entry_map,
-        team_summaries=team_summaries,
-        team_order_keys=team_order_keys,
-        ungrouped_count=ungrouped_count,
+        team_blocks=team_blocks,
+        initial_state=initial_state,
     )
 
 
