@@ -32,7 +32,7 @@
       }
       .status-header {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         gap: 1rem;
         flex-wrap: wrap;
@@ -40,9 +40,12 @@
       .status-main {
         display: flex;
         flex-direction: column;
-        gap: 0.35rem;
+        gap: 0.05rem;
         flex: 1 1 auto;
         min-width: 240px;
+      }
+      .status-main > * {
+        margin: 0;
       }
       .status-value {
         font-size: 1.2rem;
@@ -89,21 +92,6 @@
         border-radius: 10px;
         background: #f1f5f9;
         padding: 1.5rem;
-      }
-      .status-footer {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 0.75rem;
-        margin-top: 0.75rem;
-        flex-wrap: wrap;
-      }
-      .status-footer .status-meta {
-        flex: 1 1 auto;
-        min-width: 160px;
-      }
-      .status-footer .download-link {
-        margin-left: auto;
       }
       .download-link {
         display: inline-flex;
@@ -206,11 +194,9 @@
       <div class="status-header">
         <div class="status-main">
           <div id="status" class="status-value">読み込み中…</div>
-          <div id="message" class="status-message"></div>
+          <div id="message" class="status-message" hidden></div>
+          <div id="timestamp" class="status-meta" hidden></div>
         </div>
-      </div>
-      <div class="status-footer">
-        <div id="timestamp" class="status-meta"></div>
         <a
           id="download-link"
           class="download-link"
@@ -393,7 +379,17 @@
 
           statusElement.textContent = statusLabels[data.status] || data.status;
           statusElement.className = "status-value " + data.status;
-          messageElement.textContent = data.message || "";
+          const messageText =
+            typeof data.message === "string" ? data.message.trim() : "";
+          if (messageElement) {
+            if (messageText) {
+              messageElement.textContent = messageText;
+              messageElement.hidden = false;
+            } else {
+              messageElement.textContent = "";
+              messageElement.hidden = true;
+            }
+          }
 
           let updatedAtText = "";
           if (data.updated_at) {
@@ -499,15 +495,28 @@
           }
 
           if (timestampElement) {
-            timestampElement.textContent = metaText;
+            if (metaText) {
+              timestampElement.textContent = metaText;
+              timestampElement.hidden = false;
+            } else {
+              timestampElement.textContent = "";
+              timestampElement.hidden = true;
+            }
           }
 
           if (shouldStopPolling || data.status === "failed") {
             return;
           }
         } catch (error) {
-          document.getElementById("status").textContent = "エラー";
-          document.getElementById("message").textContent = error;
+          const statusElement = document.getElementById("status");
+          const messageElement = document.getElementById("message");
+          if (statusElement) {
+            statusElement.textContent = "エラー";
+          }
+          if (messageElement) {
+            messageElement.textContent = String(error);
+            messageElement.hidden = false;
+          }
         }
         setTimeout(refreshStatus, 3000);
       }
