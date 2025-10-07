@@ -113,15 +113,5 @@
       <button type="submit">アップロードして順番を確認</button>
     </form>
 
-    {% if saved_order %}
-      <div class="order-list">
-        <h2>前回の並び順</h2>
-        <ul>
-          {% for item in saved_order %}
-            <li>{{ item }}</li>
-          {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
   </body>
 </html>

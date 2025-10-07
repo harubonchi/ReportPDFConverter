@@ -722,19 +722,7 @@ def _process_job(job_id: str) -> None:
 
 @app.route("/", methods=["GET"])
 def index() -> str:
-    preferences = order_manager.load_preferences()
-    saved_order: List[str] = []
-    for team_key in preferences.team_sequence:
-        members = preferences.member_sequences.get(team_key, [])
-        if not members:
-            continue
-        label = _team_display_label(team_key)
-        for person in members:
-            if team_key == UNGROUPED_TEAM_KEY:
-                saved_order.append(person)
-            else:
-                saved_order.append(f"[{label}] {person}")
-    return render_template("index.html", saved_order=saved_order)
+    return render_template("index.html")
 
 
 @app.route("/prepare", methods=["POST"])

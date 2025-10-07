@@ -266,6 +266,7 @@
       let defaultMemberSequences = defaultMemberSequencesElement
         ? JSON.parse(defaultMemberSequencesElement.textContent || "{}")
         : {};
+      let hasAppliedDefaultOrderInitially = false;
       const applyDefaultOrderButton = document.getElementById("apply-default-order");
       const openDefaultOrderEditorButton = document.getElementById("open-default-order-editor");
 
@@ -612,7 +613,17 @@
           window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
         const isIOSStandalone =
           typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
-        const featureString = isStandalone || isIOSStandalone ? "" : "width=680,height=720";
+        const popupFeatures = [
+          "width=680",
+          "height=720",
+          "toolbar=no",
+          "location=no",
+          "status=no",
+          "menubar=no",
+          "scrollbars=yes",
+          "resizable=yes",
+        ].join(",");
+        const featureString = isStandalone || isIOSStandalone ? "" : popupFeatures;
         const openedWindow = window.open(targetUrl, "_blank", featureString);
         if (!openedWindow) {
           const tempLink = document.createElement("a");
@@ -669,6 +680,12 @@
       });
 
       rebuildFromState(initialState);
+      if (!hasAppliedDefaultOrderInitially) {
+        hasAppliedDefaultOrderInitially = true;
+        requestAnimationFrame(() => {
+          applyDefaultOrderToAll();
+        });
+      }
     </script>
   </body>
 </html>
