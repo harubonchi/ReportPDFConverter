@@ -640,7 +640,7 @@
           screenHeights.push(viewportHeight);
         }
         const fallbackHeight = screenHeights.length > 0 ? Math.max(...screenHeights) : 900;
-        const popupHeight = Math.max(360, Math.round(fallbackHeight * 0.8));
+        const popupHeight = Math.max(360, Math.round(fallbackHeight * 0.95));
         const popupFeatures = [
           "width=680",
           `height=${popupHeight}`,
