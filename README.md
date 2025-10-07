@@ -19,15 +19,16 @@ recipient.
 
 ## Environment variables
 
-Create a `.env` file (or set environment variables directly) with the following keys:
+Copy `.env.example` to `.env` (or set the environment variables directly) and provide
+your email credentials:
 
 ```
 EMAIL_SENDER=example@example.com
-SMTP_USERNAME=example@example.com
-SMTP_PASSWORD=your-password
-SMTP_SERVER=smtp.example.com
-SMTP_PORT=587
-SMTP_USE_TLS=true
+EMAIL_USERNAME=example@example.com
+EMAIL_PASSWORD=your-password
+EMAIL_SMTP_SERVER=smtp.example.com
+EMAIL_SMTP_PORT=587
+EMAIL_USE_TLS=true
 ```
 
 ## Running the application

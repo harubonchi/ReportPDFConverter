@@ -22,12 +22,18 @@ class EmailConfig:
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
-        sender = 'roboken.report.tool@gmail.com'
-        username = 'roboken.report.tool@gmail.com'
-        password = 'myoe agfr zene yzpr'
-        smtp_server = 'smtp.gmail.com'
-        smtp_port = 587
-        use_tls = 'true'
+        sender = os.getenv("EMAIL_SENDER", "")
+        username = os.getenv("EMAIL_USERNAME", sender)
+        password = os.getenv("EMAIL_PASSWORD", "")
+        smtp_server = os.getenv("EMAIL_SMTP_SERVER", "")
+
+        try:
+            smtp_port = int(os.getenv("EMAIL_SMTP_PORT", ""))
+        except (TypeError, ValueError):
+            smtp_port = 0
+
+        use_tls_value = os.getenv("EMAIL_USE_TLS", "true")
+        use_tls = str(use_tls_value).strip().lower() in {"1", "true", "yes", "on"}
         return cls(
             sender=sender,
             username=username,
