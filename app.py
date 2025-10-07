@@ -219,6 +219,8 @@ class JobState:
     processing_started_at: datetime | None = None
     processing_completed_at: datetime | None = None
     report_number: str | None = None
+    progress_current: int = 0
+    progress_total: int = 0
 
     def to_dict(self) -> Dict[str, object]:
         elapsed_seconds: float | None = None
@@ -228,6 +230,11 @@ class JobState:
                 self.processing_completed_at - self.processing_started_at
             ).total_seconds()
             elapsed_display = _format_elapsed(elapsed_seconds)
+
+        progress_percent: int | None = None
+        if self.progress_total > 0:
+            ratio = self.progress_current / self.progress_total
+            progress_percent = int(round(min(max(ratio, 0.0), 1.0) * 100))
 
         return {
             "id": self.id,
@@ -241,6 +248,9 @@ class JobState:
             "final_pdf_name": self.merged_pdf.name if self.merged_pdf else None,
             "elapsed_seconds": elapsed_seconds,
             "elapsed_display": elapsed_display,
+            "progress_current": self.progress_current,
+            "progress_total": self.progress_total,
+            "progress_percent": progress_percent,
         }
 
 
@@ -473,10 +483,19 @@ def _create_job_state(
         zip_original_name=zip_original_name,
         entries=entry_map,
         team_options=team_options,
+        progress_total=len(order) + 3 if order else 0,
     )
 
 
-def _update_job(job_id: str, *, status: str | None = None, message: str | None = None, merged_pdf: Path | None = None) -> None:
+def _update_job(
+    job_id: str,
+    *,
+    status: str | None = None,
+    message: str | None = None,
+    merged_pdf: Path | None = None,
+    progress_increment: int | None = None,
+    progress_total: int | None = None,
+) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
@@ -492,6 +511,18 @@ def _update_job(job_id: str, *, status: str | None = None, message: str | None =
             job.message = message
         if merged_pdf:
             job.merged_pdf = merged_pdf
+        if progress_total is not None:
+            job.progress_total = max(progress_total, 0)
+            if job.progress_total == 0:
+                job.progress_current = 0
+            elif job.progress_current > job.progress_total:
+                job.progress_current = job.progress_total
+        if progress_increment:
+            job.progress_current += progress_increment
+            if job.progress_total > 0:
+                job.progress_current = min(job.progress_current, job.progress_total)
+        if status == "completed" and job.progress_total > 0:
+            job.progress_current = job.progress_total
         job.updated_at = now
 
 
@@ -523,6 +554,14 @@ def _process_job(job_id: str) -> None:
         if not ordered_entries:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
+        total_steps = len(ordered_entries) + 3
+        _update_job(
+            job_id,
+            progress_total=total_steps,
+            progress_increment=1,
+            message="PDF変換の準備をしています…",
+        )
+
         report_number = _determine_report_number(job.zip_original_name, ordered_entries)
         job.report_number = report_number
 
@@ -534,10 +573,12 @@ def _process_job(job_id: str) -> None:
                 raise FileNotFoundError(f"展開後のファイルが見つかりません: {entry.archive_name}")
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
             pdf_paths.append(pdf_path)
+            _update_job(job_id, progress_increment=1)
 
         merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
         merge_pdfs(pdf_paths, merged_path)
+        _update_job(job_id, progress_increment=1)
 
         if EMAIL_CONFIG.is_configured:
             _update_job(job_id, message="結合したPDFをメールで送信しています…")
@@ -550,6 +591,7 @@ def _process_job(job_id: str) -> None:
                 ),
                 attachment_path=merged_path,
             )
+            _update_job(job_id, progress_increment=1)
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
 
