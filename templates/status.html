@@ -248,7 +248,7 @@
       function formatTeamLabel(value) {
         const trimmed = value.trim();
         if (!trimmed) {
-          return "◯班";
+          return "◯◯班";
         }
         if (trimmed === "班なし") {
           return trimmed;
@@ -267,10 +267,15 @@
         const teamValue = teamSelect ? teamSelect.value || "" : "";
         const gradeValue = gradeSelect ? gradeSelect.value || "" : "";
         const nameValue = nameInput ? nameInput.value.trim() : "";
-        const gradeText = gradeValue || "学年";
-        const nameText = nameValue || "名前";
-        const teamLabel = formatTeamLabel(teamValue || "");
-        emailTextArea.value = `お世話になっております。${teamLabel} ${gradeText} ${nameText}です。\n第${currentReportNumber}回報告書を添付しております。\nよろしくお願いいたします。`;
+        const placeholderTeam = "◯◯班";
+        const placeholderGrade = "(学年)";
+        const placeholderName = "(名前)";
+        const teamLabel = teamValue ? formatTeamLabel(teamValue) : placeholderTeam;
+        const gradeLabel = gradeValue || placeholderGrade;
+        const nameLabel = nameValue || placeholderName;
+        const teamGradeSeparator = gradeValue ? (teamValue ? "" : " ") : " ";
+        const gradeNameSeparator = nameValue ? "の" : " の ";
+        emailTextArea.value = `お世話になっております。${teamLabel}${teamGradeSeparator}${gradeLabel}${gradeNameSeparator}${nameLabel}です。\n第${currentReportNumber}回報告書を添付しております。\nよろしくお願いいたします。`;
       }
 
       if (teamSelect) {
