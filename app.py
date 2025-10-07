@@ -368,25 +368,26 @@ def _format_elapsed(total_seconds: float) -> str:
 
 def _sanitize_report_filename(original_name: str) -> str:
     path = Path(original_name)
-    name = path.name
+    suffix = path.suffix
+    stem = path.stem
 
-    name = re.sub(r"[,，、]", "・", name)
-    name = re.sub(r"[₋_＿\s]+", " ", name)
-    name = re.sub(r"報告会", "報告書", name)
-    name = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", name)
-    name = re.sub(r"\s+", " ", name).strip()
+    stem = re.sub(r"[･.,，、．｡]+", "・", stem)
+    stem = re.sub(r"[₋_＿\s]+", " ", stem)
+    stem = re.sub(r"報告会", "報告書", stem)
+    stem = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", stem)
+    stem = re.sub(r"\s+", " ", stem).strip()
 
-    if "回" in name and "報告書" not in name:
-        pos = name.find("回")
+    if "回" in stem and "報告書" not in stem:
+        pos = stem.find("回")
         if pos != -1:
             insert_pos = pos + 1
-            name = name[:insert_pos] + "報告書" + name[insert_pos:]
+            stem = stem[:insert_pos] + "報告書" + stem[insert_pos:]
 
-    if "報告書" not in name:
-        name = name.replace("回 ", "回報告書 ")
-        name = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", name)
+    if "報告書" not in stem:
+        stem = stem.replace("回 ", "回報告書 ")
+        stem = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", stem)
 
-    return name
+    return f"{stem}{suffix}"
 
 
 def _extract_person_names(sanitized_name: str) -> List[str]:
