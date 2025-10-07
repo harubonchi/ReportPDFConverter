@@ -51,6 +51,7 @@ class ZipEntry:
     archive_name: str
     team_name: str | None = None
     persons: List[str] | None = None
+    sanitized_name: str | None = None
 
 
 UNGROUPED_TEAM_KEY = "__ungrouped__"
@@ -211,10 +212,23 @@ class JobState:
     updated_at: datetime
     order: List[str]
     zip_path: Path
+    zip_original_name: str
     entries: Dict[str, ZipEntry]
+    team_options: List[str]
     merged_pdf: Path | None = None
+    processing_started_at: datetime | None = None
+    processing_completed_at: datetime | None = None
+    report_number: str | None = None
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> Dict[str, object]:
+        elapsed_seconds: float | None = None
+        elapsed_display: str | None = None
+        if self.processing_started_at and self.processing_completed_at:
+            elapsed_seconds = (
+                self.processing_completed_at - self.processing_started_at
+            ).total_seconds()
+            elapsed_display = _format_elapsed(elapsed_seconds)
+
         return {
             "id": self.id,
             "email": self.email,
@@ -222,6 +236,11 @@ class JobState:
             "message": self.message,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
+            "team_options": self.team_options,
+            "report_number": self.report_number,
+            "final_pdf_name": self.merged_pdf.name if self.merged_pdf else None,
+            "elapsed_seconds": elapsed_seconds,
+            "elapsed_display": elapsed_display,
         }
 
 
@@ -231,7 +250,7 @@ app.secret_key = "gain-report-emailer"
 executor = ThreadPoolExecutor(max_workers=2)
 jobs: Dict[str, JobState] = {}
 jobs_lock = threading.Lock()
-upload_sessions: Dict[str, Dict[str, ZipEntry]] = {}
+upload_sessions: Dict[str, Dict[str, object]] = {}
 
 
 EMAIL_CONFIG = EmailConfig.from_env()
@@ -250,6 +269,19 @@ def _infer_team_directory_level(paths: List[PurePosixPath]) -> int | None:
 def _append_duplicate_suffix(base_name: str, counter: int) -> str:
     path = Path(base_name)
     return f"{path.stem} ({counter}){path.suffix}"
+
+
+def _format_elapsed(total_seconds: float) -> str:
+    seconds = int(round(total_seconds))
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts: List[str] = []
+    if hours:
+        parts.append(f"{hours}時間")
+    if minutes or hours:
+        parts.append(f"{minutes}分")
+    parts.append(f"{seconds}秒")
+    return "".join(parts)
 
 
 def _sanitize_report_filename(original_name: str) -> str:
@@ -287,6 +319,47 @@ def _extract_person_names(sanitized_name: str) -> List[str]:
     tokens = re.split(r"[・,，、\s]+", remainder)
     persons = [token.strip() for token in tokens if token.strip()]
     return persons
+
+
+def _extract_report_number_from_name(name: str | None) -> str | None:
+    if not name:
+        return None
+    stem = Path(name).stem
+    match = re.search(r"第\s*(\d{1,3})\s*回", stem)
+    if match:
+        return match.group(1)
+    digits = re.findall(r"\d+", stem)
+    if digits:
+        return digits[0]
+    return None
+
+
+def _determine_report_number(zip_original_name: str, entries: List[ZipEntry]) -> str:
+    number = _extract_report_number_from_name(zip_original_name)
+    if number:
+        return number
+
+    counts: Dict[str, int] = {}
+    for entry in entries:
+        candidate = _extract_report_number_from_name(entry.sanitized_name)
+        if not candidate:
+            candidate = _extract_report_number_from_name(entry.display_name)
+        if not candidate:
+            continue
+        counts[candidate] = counts.get(candidate, 0) + 1
+
+    if counts:
+        def sort_key(item: tuple[str, int]) -> tuple[int, int]:
+            value, count = item
+            try:
+                numeric_value = int(value)
+            except ValueError:
+                numeric_value = -1
+            return (-count, -numeric_value)
+
+        return sorted(counts.items(), key=sort_key)[0][0]
+
+    return "1"
 
 
 def _team_display_label(team_key: str) -> str:
@@ -355,6 +428,7 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
                 archive_name=str(path),
                 team_name=team_name,
                 persons=persons,
+                sanitized_name=sanitized_name,
             )
         )
 
@@ -377,7 +451,15 @@ def _apply_team_prefixes(extract_dir: Path, entries: Dict[str, ZipEntry]) -> Non
 
         entry.archive_name = str(target_path.relative_to(extract_dir).as_posix())
 
-def _create_job_state(job_id: str, email: str, order: List[str], zip_path: Path, entry_map: Dict[str, ZipEntry]) -> JobState:
+def _create_job_state(
+    job_id: str,
+    email: str,
+    order: List[str],
+    zip_path: Path,
+    entry_map: Dict[str, ZipEntry],
+    zip_original_name: str,
+    team_options: List[str],
+) -> JobState:
     now = datetime.now(JST)
     return JobState(
         id=job_id,
@@ -388,7 +470,9 @@ def _create_job_state(job_id: str, email: str, order: List[str], zip_path: Path,
         updated_at=now,
         order=order,
         zip_path=zip_path,
+        zip_original_name=zip_original_name,
         entries=entry_map,
+        team_options=team_options,
     )
 
 
@@ -397,13 +481,18 @@ def _update_job(job_id: str, *, status: str | None = None, message: str | None =
         job = jobs.get(job_id)
         if not job:
             return
+        now = datetime.now(JST)
         if status:
             job.status = status
+            if status == "running" and job.processing_started_at is None:
+                job.processing_started_at = now
+            if status in {"completed", "failed"}:
+                job.processing_completed_at = now
         if message:
             job.message = message
         if merged_pdf:
             job.merged_pdf = merged_pdf
-        job.updated_at = datetime.now(JST)
+        job.updated_at = now
 
 
 def _process_job(job_id: str) -> None:
@@ -434,6 +523,9 @@ def _process_job(job_id: str) -> None:
         if not ordered_entries:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
+        report_number = _determine_report_number(job.zip_original_name, ordered_entries)
+        job.report_number = report_number
+
         pdf_paths: List[Path] = []
         for entry in ordered_entries:
             _update_job(job_id, message=f"{entry.display_name} をPDFに変換しています…")
@@ -443,7 +535,7 @@ def _process_job(job_id: str) -> None:
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
             pdf_paths.append(pdf_path)
 
-        merged_path = work_root / "merged.pdf"
+        merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
         merge_pdfs(pdf_paths, merged_path)
 
@@ -536,7 +628,13 @@ def prepare_upload() -> Response | str:
             }
         )
 
-    upload_sessions[job_id] = entry_map
+    team_options = [block["label"] for block in team_blocks]
+
+    upload_sessions[job_id] = {
+        "entries": entry_map,
+        "team_options": team_options,
+        "zip_filename": zip_file.filename or "",
+    }
 
     initial_state = [
         {
@@ -585,9 +683,35 @@ def start_processing() -> str:
         flash("ドキュメントの並び順が空です。もう一度お試しください。")
         return redirect(url_for("index"))
 
-    entry_map = upload_sessions.pop(job_id)
+    session_data = upload_sessions.pop(job_id)
+    entry_map = session_data.get("entries", {}) if isinstance(session_data, dict) else {}
+    team_options_raw = session_data.get("team_options", []) if isinstance(session_data, dict) else []
+    zip_original_name = session_data.get("zip_filename", "") if isinstance(session_data, dict) else ""
+
+    if not isinstance(entry_map, dict) or not entry_map:
+        flash("処理対象のデータを取得できませんでした。もう一度お試しください。")
+        return redirect(url_for("index"))
+
+    team_options = [str(option) for option in team_options_raw if isinstance(option, str)]
+    if not team_options:
+        labels = {
+            _team_display_label(entry.team_name or UNGROUPED_TEAM_KEY)
+            for entry in entry_map.values()
+        }
+        team_options = sorted(labels)
+
+    zip_original_name = str(zip_original_name) if zip_original_name else ""
+
     zip_path = UPLOAD_DIR / f"{job_id}.zip"
-    job_state = _create_job_state(job_id, email, order, zip_path, entry_map)
+    job_state = _create_job_state(
+        job_id,
+        email,
+        order,
+        zip_path,
+        entry_map,
+        zip_original_name or zip_path.name,
+        team_options,
+    )
 
     with jobs_lock:
         jobs[job_id] = job_state

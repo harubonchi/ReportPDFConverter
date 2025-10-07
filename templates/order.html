@@ -42,22 +42,21 @@
         background: #fdfdfd;
         padding: 1rem 1.25rem;
         box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
-        cursor: grab;
       }
       .team-block:focus-within {
         outline: none;
         box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.25);
-      }
-      .team-block.dragging {
-        opacity: 0.75;
-        cursor: grabbing;
-        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
       }
       .team-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 0.75rem;
+      }
+      .team-summary {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
       }
       .team-title {
         font-size: 1.15rem;
@@ -70,6 +69,22 @@
         color: #fff;
         border-radius: 999px;
         padding: 0.2rem 0.75rem;
+      }
+      .team-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .team-actions button {
+        background: #0b7285;
+        border: none;
+        color: #fff;
+        padding: 0.35rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .team-actions button.secondary {
+        background: #495057;
       }
       .document-list {
         list-style: none;
@@ -138,7 +153,8 @@
         background: #495057;
       }
       .controls button:hover,
-      .doc-actions button:hover {
+      .doc-actions button:hover,
+      .team-actions button:hover {
         opacity: 0.92;
       }
       @media (max-width: 640px) {
@@ -159,7 +175,7 @@
     <h1>報告書の並び替え</h1>
     <div class="instructions">
       <p>
-        班（フォルダー）単位の並び替えはドラッグ＆ドロップで行い、班の中の個人ファイルは上下ボタンで並び替えてください。
+        班（フォルダー）単位も上下ボタンで並び替え、班の中の個人ファイルは上下ボタンで調整してください。
         不要なファイルは「削除」ボタンで除外できます。並び順は次回以降のアップロード時に自動で再現されます。
       </p>
     </div>
@@ -172,10 +188,16 @@
 
         <div id="team-board" class="team-board">
           {% for block in team_blocks %}
-            <div class="team-block" data-team-key="{{ block.key }}" draggable="true">
+            <div class="team-block" data-team-key="{{ block.key }}">
               <div class="team-header">
-                <span class="team-title">{{ block.label }}</span>
-                <span class="team-count" data-count>{{ block.count }} 件</span>
+                <div class="team-summary">
+                  <span class="team-title">{{ block.label }}</span>
+                  <span class="team-count" data-count>{{ block.count }} 件</span>
+                </div>
+                <div class="team-actions">
+                  <button type="button" class="secondary team-move-up" aria-label="班を上に移動">▲</button>
+                  <button type="button" class="secondary team-move-down" aria-label="班を下に移動">▼</button>
+                </div>
               </div>
               <ul class="document-list">
                 {% for entry in block.entries %}
@@ -255,9 +277,34 @@
         updateOrderInput();
       }
 
+      function handleTeamMove(block, direction) {
+        if (!block) {
+          return;
+        }
+        const sibling = direction === "up" ? block.previousElementSibling : block.nextElementSibling;
+        if (!sibling) {
+          return;
+        }
+        if (direction === "up") {
+          teamBoard.insertBefore(block, sibling);
+        } else {
+          teamBoard.insertBefore(sibling, block);
+        }
+        updateOrderInput();
+      }
+
       teamBoard.addEventListener("click", (event) => {
         const target = event.target.closest("button");
         if (!target) {
+          return;
+        }
+        if (target.classList.contains("team-move-up") || target.classList.contains("team-move-down")) {
+          const teamBlock = target.closest(".team-block");
+          if (!teamBlock) {
+            return;
+          }
+          const direction = target.classList.contains("team-move-up") ? "up" : "down";
+          handleTeamMove(teamBlock, direction);
           return;
         }
         const item = target.closest(".document-item");
@@ -277,66 +324,42 @@
         }
       });
 
-      let draggingTeam = null;
-
-      teamBoard.addEventListener("dragstart", (event) => {
-        const block = event.target.closest(".team-block");
-        if (!block) {
-          return;
-        }
-        draggingTeam = block;
-        block.classList.add("dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", block.dataset.teamKey || "");
-      });
-
-      teamBoard.addEventListener("dragover", (event) => {
-        if (!draggingTeam) {
-          return;
-        }
-        event.preventDefault();
-        const block = event.target.closest(".team-block");
-        if (!block || block === draggingTeam) {
-          return;
-        }
-        const rect = block.getBoundingClientRect();
-        const shouldInsertBefore = event.clientY < rect.top + rect.height / 2;
-        teamBoard.insertBefore(draggingTeam, shouldInsertBefore ? block : block.nextElementSibling);
-      });
-
-      teamBoard.addEventListener("dragend", () => {
-        if (!draggingTeam) {
-          return;
-        }
-        draggingTeam.classList.remove("dragging");
-        draggingTeam = null;
-        updateOrderInput();
-      });
-
-      teamBoard.addEventListener("drop", (event) => {
-        if (draggingTeam) {
-          event.preventDefault();
-        }
-      });
-
       function rebuildFromState(state) {
         teamBoard.innerHTML = "";
         state.forEach((team) => {
           const block = document.createElement("div");
           block.className = "team-block";
           block.setAttribute("data-team-key", team.key);
-          block.setAttribute("draggable", "true");
 
           const header = document.createElement("div");
           header.className = "team-header";
+          const summary = document.createElement("div");
+          summary.className = "team-summary";
           const title = document.createElement("span");
           title.className = "team-title";
           title.textContent = team.label;
           const count = document.createElement("span");
           count.className = "team-count";
           count.setAttribute("data-count", "");
-          header.appendChild(title);
-          header.appendChild(count);
+          summary.appendChild(title);
+          summary.appendChild(count);
+          header.appendChild(summary);
+
+          const actions = document.createElement("div");
+          actions.className = "team-actions";
+          const upButton = document.createElement("button");
+          upButton.type = "button";
+          upButton.className = "secondary team-move-up";
+          upButton.setAttribute("aria-label", "班を上に移動");
+          upButton.textContent = "▲";
+          const downButton = document.createElement("button");
+          downButton.type = "button";
+          downButton.className = "secondary team-move-down";
+          downButton.setAttribute("aria-label", "班を下に移動");
+          downButton.textContent = "▼";
+          actions.appendChild(upButton);
+          actions.appendChild(downButton);
+          header.appendChild(actions);
           block.appendChild(header);
 
           const list = document.createElement("ul");
