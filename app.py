@@ -399,7 +399,7 @@ def _build_display_name(
     return _append_duplicate_suffix(prefixed_name, occurrence)
 
 
-def _extract_entries(zip_path: Path) -> List[ZipEntry]:
+def _extract_entries(zip_path: Path, *, original_name: str | None = None) -> List[ZipEntry]:
     entries: List[ZipEntry] = []
     word_infos: List[tuple[zipfile.ZipInfo, PurePosixPath]] = []
 
@@ -416,7 +416,12 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
         return entries
 
     team_level = _infer_team_directory_level([path for _, path in word_infos])
-    default_team_name = zip_path.name if team_level is None else None
+    default_team_name: str | None = None
+    if team_level is None:
+        if original_name:
+            default_team_name = Path(original_name).stem
+        else:
+            default_team_name = zip_path.stem
     duplicate_counter: Dict[str, int] = {}
 
     for info, path in word_infos:
@@ -636,7 +641,7 @@ def prepare_upload() -> Response | str:
     zip_path = UPLOAD_DIR / f"{job_id}.zip"
     zip_file.save(zip_path)
 
-    entries = _extract_entries(zip_path)
+    entries = _extract_entries(zip_path, original_name=zip_file.filename)
     if not entries:
         zip_path.unlink(missing_ok=True)
         flash("アップロードされたZIPにWordファイルが見つかりませんでした。")
