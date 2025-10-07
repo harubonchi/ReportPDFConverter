@@ -541,6 +541,25 @@ def _team_display_label(team_key: str) -> str:
     return "班なし" if team_key == UNGROUPED_TEAM_KEY else team_key
 
 
+def _team_labels_from_preferences(preferences: OrderPreferences) -> List[str]:
+    labels: List[str] = []
+    seen: set[str] = set()
+
+    for team_key in preferences.team_sequence:
+        label = _team_display_label(team_key)
+        if label and label not in seen:
+            labels.append(label)
+            seen.add(label)
+
+    for team_key in preferences.member_sequences:
+        label = _team_display_label(team_key)
+        if label and label not in seen:
+            labels.append(label)
+            seen.add(label)
+
+    return labels
+
+
 def _build_display_name(
     sanitized_name: str,
     team_name: str | None,
@@ -797,6 +816,7 @@ def prepare_upload() -> Response | str:
         return redirect(url_for("index"))
 
     preferences = order_manager.load_preferences()
+    preference_team_options = _team_labels_from_preferences(preferences)
 
     entry_map: Dict[str, ZipEntry] = {entry.display_name: entry for entry in entries}
     team_sequence, team_entries = order_manager.initial_layout(list(entry_map.values()))
@@ -827,6 +847,7 @@ def prepare_upload() -> Response | str:
             )
 
     team_options = [block["label"] for block in team_blocks]
+    session_team_options = preference_team_options or team_options
 
     default_member_sequences = {
         key: list(value)
@@ -835,7 +856,7 @@ def prepare_upload() -> Response | str:
 
     upload_sessions[job_id] = {
         "entries": entry_map,
-        "team_options": team_options,
+        "team_options": session_team_options,
         "zip_filename": zip_file.filename or "",
     }
 
@@ -1022,6 +1043,13 @@ def start_processing() -> str:
         return redirect(url_for("index"))
 
     team_options = [str(option) for option in team_options_raw if isinstance(option, str)]
+    if not team_options:
+        preference_team_options = _team_labels_from_preferences(
+            order_manager.load_preferences()
+        )
+        if preference_team_options:
+            team_options = preference_team_options
+
     if not team_options:
         labels = {
             _team_display_label(entry.team_name or UNGROUPED_TEAM_KEY)
