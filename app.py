@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Dict, List
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from flask import (
@@ -27,6 +28,8 @@ from pdf_merge import merge_pdfs
 from word_to_pdf_converter import convert_word_to_pdf
 from email_service import EmailConfig, send_email_with_attachment
 
+
+JST = ZoneInfo("Asia/Tokyo")
 
 load_dotenv()
 
@@ -256,6 +259,7 @@ def _sanitize_report_filename(original_name: str) -> str:
     name = re.sub(r"[,，、]", "・", name)
     name = re.sub(r"[₋_＿\s]+", " ", name)
     name = re.sub(r"報告会", "報告書", name)
+    name = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", name)
     name = re.sub(r"\s+", " ", name).strip()
 
     if "回" in name and "報告書" not in name:
@@ -266,6 +270,7 @@ def _sanitize_report_filename(original_name: str) -> str:
 
     if "報告書" not in name:
         name = name.replace("回 ", "回報告書 ")
+        name = re.sub(r"(報告書)(?![\s・,，、])", r"\1 ", name)
 
     return name
 
@@ -328,6 +333,7 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
         return entries
 
     team_level = _infer_team_directory_level([path for _, path in word_infos])
+    default_team_name = zip_path.name if team_level is None else None
     duplicate_counter: Dict[str, int] = {}
 
     for info, path in word_infos:
@@ -335,6 +341,8 @@ def _extract_entries(zip_path: Path) -> List[ZipEntry]:
         team_name: str | None = None
         if team_level is not None and len(directories) > team_level:
             team_name = directories[team_level]
+        elif default_team_name:
+            team_name = default_team_name
 
         sanitized_name = _sanitize_report_filename(path.name)
         display_name = _build_display_name(sanitized_name, team_name, duplicate_counter)
@@ -370,12 +378,12 @@ def _apply_team_prefixes(extract_dir: Path, entries: Dict[str, ZipEntry]) -> Non
         entry.archive_name = str(target_path.relative_to(extract_dir).as_posix())
 
 def _create_job_state(job_id: str, email: str, order: List[str], zip_path: Path, entry_map: Dict[str, ZipEntry]) -> JobState:
-    now = datetime.utcnow()
+    now = datetime.now(JST)
     return JobState(
         id=job_id,
         email=email,
         status="queued",
-        message="Job queued.",
+        message="処理を待機しています。",
         created_at=now,
         updated_at=now,
         order=order,
@@ -395,7 +403,7 @@ def _update_job(job_id: str, *, status: str | None = None, message: str | None =
             job.message = message
         if merged_pdf:
             job.merged_pdf = merged_pdf
-        job.updated_at = datetime.utcnow()
+        job.updated_at = datetime.now(JST)
 
 
 def _process_job(job_id: str) -> None:
@@ -405,7 +413,7 @@ def _process_job(job_id: str) -> None:
         return
 
     try:
-        _update_job(job_id, status="running", message="Extracting ZIP archive…")
+        _update_job(job_id, status="running", message="ZIPファイルを展開しています…")
         work_root = WORK_DIR / job_id
         extract_dir = work_root / "extracted"
         pdf_dir = work_root / "pdf"
@@ -424,39 +432,39 @@ def _process_job(job_id: str) -> None:
                 ordered_entries.append(entry)
 
         if not ordered_entries:
-            raise RuntimeError("No documents found to process.")
+            raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
         pdf_paths: List[Path] = []
         for entry in ordered_entries:
-            _update_job(job_id, message=f"Converting {entry.display_name} to PDF…")
+            _update_job(job_id, message=f"{entry.display_name} をPDFに変換しています…")
             source_path = extract_dir / entry.archive_name
             if not source_path.exists():
-                raise FileNotFoundError(f"Extracted file missing: {entry.archive_name}")
+                raise FileNotFoundError(f"展開後のファイルが見つかりません: {entry.archive_name}")
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
             pdf_paths.append(pdf_path)
 
         merged_path = work_root / "merged.pdf"
-        _update_job(job_id, message="Merging PDF files…")
+        _update_job(job_id, message="PDFファイルを結合しています…")
         merge_pdfs(pdf_paths, merged_path)
 
         if EMAIL_CONFIG.is_configured:
-            _update_job(job_id, message="Sending email with merged PDF…")
+            _update_job(job_id, message="結合したPDFをメールで送信しています…")
             send_email_with_attachment(
                 config=EMAIL_CONFIG,
                 recipient=job.email,
-                subject="Merged report",
+                subject="結合済み報告書",
                 body=(
-                    "The merged PDF report you requested is attached."
+                    "結合した報告書PDFを添付しています。"
                 ),
                 attachment_path=merged_path,
             )
         else:
-            raise RuntimeError("Email configuration is incomplete. Please update environment variables.")
+            raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
 
         order_manager.save(job.order, job.entries)
-        _update_job(job_id, status="completed", message="Report emailed successfully.", merged_pdf=merged_path)
+        _update_job(job_id, status="completed", message="PDFの送信が完了しました。", merged_pdf=merged_path)
     except Exception as exc:  # noqa: BLE001
-        _update_job(job_id, status="failed", message=str(exc))
+        _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
     finally:
         job.zip_path.unlink(missing_ok=True)
 
@@ -484,10 +492,10 @@ def prepare_upload() -> Response | str:
     zip_file = request.files.get("zip_file")
 
     if not email:
-        flash("Email address is required.")
+        flash("メールアドレスを入力してください。")
         return redirect(url_for("index"))
     if not zip_file or not zip_file.filename:
-        flash("Please select a ZIP file to upload.")
+        flash("アップロードするZIPファイルを選択してください。")
         return redirect(url_for("index"))
 
     job_id = uuid.uuid4().hex
@@ -497,7 +505,7 @@ def prepare_upload() -> Response | str:
     entries = _extract_entries(zip_path)
     if not entries:
         zip_path.unlink(missing_ok=True)
-        flash("The uploaded ZIP does not contain any Word documents.")
+        flash("アップロードされたZIPにWordファイルが見つかりませんでした。")
         return redirect(url_for("index"))
 
     entry_map: Dict[str, ZipEntry] = {entry.display_name: entry for entry in entries}
@@ -563,18 +571,18 @@ def start_processing() -> str:
     order_data = request.form.get("order", "")
 
     if not job_id or job_id not in upload_sessions:
-        flash("Unable to locate the upload session. Please try again.")
+        flash("アップロード情報を確認できませんでした。もう一度お試しください。")
         return redirect(url_for("index"))
     if not email:
-        flash("Email address is required.")
+        flash("メールアドレスを入力してください。")
         return redirect(url_for("index"))
     if not order_data:
-        flash("Please confirm the document order before starting.")
+        flash("処理を開始する前に順番を確定してください。")
         return redirect(url_for("index"))
 
     order = [name for name in order_data.split("|") if name]
     if not order:
-        flash("Document order is empty. Please try again.")
+        flash("ドキュメントの並び順が空です。もう一度お試しください。")
         return redirect(url_for("index"))
 
     entry_map = upload_sessions.pop(job_id)
@@ -594,7 +602,7 @@ def job_status(job_id: str) -> Response:
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"error": "Job not found."}), 404
+            return jsonify({"error": "ジョブが見つかりません。"}), 404
         return jsonify(job.to_dict())
 
 

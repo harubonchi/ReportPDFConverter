@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>Gain Report Emailer</title>
+    <title>ロボ研報告書作成ツール</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -76,15 +76,12 @@
     </style>
   </head>
   <body>
-    <h1>Generate and Email Merged Reports</h1>
+    <h1>ロボ研報告書作成ツール</h1>
     <p>
-      Upload a ZIP archive containing Word documents. After selecting the order, the
-      system will convert the documents to PDF, merge them, and email the final PDF to
-      the specified address.
+      Word形式の報告書をまとめたZIPファイルをアップロードすると、PDFに変換して結合し、指定したメールアドレスに送信します。
     </p>
     <p class="hint">
-      When the ZIP archive includes team folders (such as R班, N班, or S班), the documents will be
-      automatically labelled with their team so you can organise them more easily when arranging the order.
+      ZIP内にR班やN班などのフォルダーがある場合は班名として自動認識します。フォルダーが無い場合はアップロードしたZIPファイル名を班名として表示します。
     </p>
 
     {% with messages = get_flashed_messages() %}
@@ -96,18 +93,18 @@
     {% endwith %}
 
     <form action="{{ url_for('prepare_upload') }}" method="post" enctype="multipart/form-data">
-      <label for="email">Recipient email address</label>
-      <input type="email" name="email" id="email" required placeholder="name@example.com" />
+      <label for="email">送信先メールアドレス</label>
+      <input type="email" name="email" id="email" required placeholder="example@example.com" />
 
-      <label for="zip_file">ZIP file containing Word documents</label>
+      <label for="zip_file">報告書が入ったZIPファイル</label>
       <input type="file" name="zip_file" id="zip_file" accept=".zip" required />
 
-      <button type="submit">Upload and choose order</button>
+      <button type="submit">アップロードして順番を確認</button>
     </form>
 
     {% if saved_order %}
       <div class="order-list">
-        <h2>Most recent document order</h2>
+        <h2>前回の並び順</h2>
         <ul>
           {% for item in saved_order %}
             <li>{{ item }}</li>

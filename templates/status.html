@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <title>Processing status</title>
+    <title>ロボ研報告書作成ツール - 進行状況</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -36,42 +36,49 @@
     </style>
   </head>
   <body>
-    <h1>Background job status</h1>
+    <h1>処理状況</h1>
     <p>
-      The job identifier is <strong>{{ job_id }}</strong>. This page will refresh automatically
-      until the process completes.
+      ジョブIDは <strong>{{ job_id }}</strong> です。処理が完了するまで数秒おきに自動更新されます。
     </p>
 
     <div class="status-box">
-      <div id="status" class="status-value">Loading…</div>
+      <div id="status" class="status-value">読み込み中…</div>
       <div id="message" class="status-message"></div>
       <div id="timestamp"></div>
     </div>
 
     <script>
       const statusUrl = "{{ url_for('job_status', job_id=job_id) }}";
+      const statusLabels = {
+        queued: "待機中",
+        running: "処理中",
+        completed: "完了",
+        failed: "失敗",
+      };
 
       async function refreshStatus() {
         try {
           const response = await fetch(statusUrl);
           if (!response.ok) {
-            throw new Error("Unable to fetch status");
+            throw new Error("ステータスを取得できませんでした");
           }
           const data = await response.json();
           const statusElement = document.getElementById("status");
           const messageElement = document.getElementById("message");
           const timestampElement = document.getElementById("timestamp");
 
-          statusElement.textContent = data.status;
+          statusElement.textContent = statusLabels[data.status] || data.status;
           statusElement.className = "status-value " + data.status;
           messageElement.textContent = data.message || "";
-          timestampElement.textContent = "Updated: " + new Date(data.updated_at).toLocaleString();
+          timestampElement.textContent =
+            "更新日時: " +
+            new Date(data.updated_at).toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 
           if (data.status === "completed" || data.status === "failed") {
             return;
           }
         } catch (error) {
-          document.getElementById("status").textContent = "Error";
+          document.getElementById("status").textContent = "エラー";
           document.getElementById("message").textContent = error;
         }
         setTimeout(refreshStatus, 3000);
