@@ -141,6 +141,14 @@ class OrderManager:
                         member_sequences[key] = [
                             name for name in value if isinstance(name, str)
                         ]
+            if UNGROUPED_TEAM_KEY in member_sequences and not member_sequences[
+                UNGROUPED_TEAM_KEY
+            ]:
+                member_sequences.pop(UNGROUPED_TEAM_KEY, None)
+            if UNGROUPED_TEAM_KEY not in member_sequences:
+                team_sequence = [
+                    team for team in team_sequence if team != UNGROUPED_TEAM_KEY
+                ]
             return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
 
         if isinstance(data, list) and all(isinstance(item, str) for item in data):
@@ -845,8 +853,6 @@ def _collect_preference_teams(preferences: OrderPreferences) -> List[Dict[str, o
 
     for team_key in preferences.member_sequences.keys():
         append_team(team_key)
-
-    append_team(UNGROUPED_TEAM_KEY)
 
     return teams
 

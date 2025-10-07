@@ -183,6 +183,14 @@
       const groupLabel = document.getElementById("current-group-label");
       const saveUrl = "{{ url_for('save_default_member_order') }}";
       const deleteUrl = "{{ url_for('delete_default_member_order') }}";
+      const fallbackKey =
+        typeof initialData.ungrouped_key === "string" && initialData.ungrouped_key
+          ? initialData.ungrouped_key
+          : "__ungrouped__";
+      const fallbackLabel =
+        typeof initialData.ungrouped_label === "string" && initialData.ungrouped_label
+          ? initialData.ungrouped_label
+          : "班なし";
 
       const teams = new Map();
       let teamOrder = Array.isArray(initialData.team_order) ? [...initialData.team_order] : [];
@@ -205,21 +213,23 @@
         });
       }
 
-      if (teamOrder.length === 0) {
-        teamOrder = Array.from(teams.keys());
-      }
+      teamOrder = teamOrder.filter((key) => teams.has(key));
+      teams.forEach((_, key) => {
+        if (!teamOrder.includes(key)) {
+          teamOrder.push(key);
+        }
+      });
 
-      if (teams.size === 0) {
-        const fallbackKey = initialData.ungrouped_key || "__ungrouped__";
-        const fallbackLabel = initialData.ungrouped_label || "班なし";
-        teams.set(fallbackKey, { key: fallbackKey, label: fallbackLabel, members: [] });
-        teamOrder.push(fallbackKey);
+      let currentTeamKey = null;
+      if (
+        typeof initialData.initial_team_key === "string" &&
+        teams.has(initialData.initial_team_key)
+      ) {
+        currentTeamKey = initialData.initial_team_key;
       }
-
-      let currentTeamKey =
-        typeof initialData.initial_team_key === "string" && teams.has(initialData.initial_team_key)
-          ? initialData.initial_team_key
-          : teamOrder.find((key) => teams.has(key));
+      if (!currentTeamKey) {
+        currentTeamKey = teamOrder.find((key) => teams.has(key)) || null;
+      }
 
       function notifyParent() {
         if (window.opener && !window.opener.closed) {
@@ -231,34 +241,44 @@
         }
       }
 
+      function hasCurrentTeam() {
+        return Boolean(currentTeamKey && teams.has(currentTeamKey));
+      }
+
       function ensureSelection() {
-        if (!currentTeamKey || !teams.has(currentTeamKey)) {
-          currentTeamKey = teamOrder.find((key) => teams.has(key));
+        if (hasCurrentTeam()) {
+          return;
         }
-        if (!currentTeamKey) {
-          const fallbackKey = initialData.ungrouped_key || "__ungrouped__";
-          const fallbackLabel = initialData.ungrouped_label || "班なし";
-          teams.set(fallbackKey, { key: fallbackKey, label: fallbackLabel, members: [] });
-          if (!teamOrder.includes(fallbackKey)) {
-            teamOrder.push(fallbackKey);
-          }
-          currentTeamKey = fallbackKey;
-        }
+        currentTeamKey = teamOrder.find((key) => teams.has(key)) || null;
       }
 
       function updateGroupLabel() {
-        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
         groupLabel.textContent = team ? team.label : "";
+      }
+
+      function updateMemberInputState() {
+        const teamExists = hasCurrentTeam();
+        memberInput.disabled = !teamExists;
+        addMemberButton.disabled = !teamExists;
+        saveButton.disabled = !teamExists;
+        if (!teamExists) {
+          memberInput.value = "";
+        }
+        memberInput.placeholder = teamExists ? "メンバー名を入力" : "班を追加してください";
       }
 
       function refreshGroupOptions() {
         ensureSelection();
         groupSelect.innerHTML = "";
+        teamOrder = teamOrder.filter((key) => teams.has(key));
+        let hasSelectableTeam = false;
         teamOrder.forEach((key) => {
           const team = teams.get(key);
           if (!team) {
             return;
           }
+          hasSelectableTeam = true;
           const option = document.createElement("option");
           option.value = key;
           option.textContent = team.label;
@@ -267,25 +287,43 @@
           }
           groupSelect.appendChild(option);
         });
+        if (!hasSelectableTeam) {
+          const placeholderOption = document.createElement("option");
+          placeholderOption.value = "";
+          placeholderOption.textContent = "（班が登録されていません）";
+          placeholderOption.disabled = true;
+          placeholderOption.selected = true;
+          groupSelect.appendChild(placeholderOption);
+        }
         const createOption = document.createElement("option");
         createOption.value = CREATE_OPTION_VALUE;
         createOption.textContent = "＋ 新しい班を追加";
         groupSelect.appendChild(createOption);
         updateGroupLabel();
         updateDeleteButtonState();
+        updateMemberInputState();
       }
 
       function updateDeleteButtonState() {
-        deleteButton.disabled = !currentTeamKey || !teams.has(currentTeamKey);
+        deleteButton.disabled = !hasCurrentTeam();
       }
 
       function renderMembers() {
         ensureSelection();
-        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
         memberList.innerHTML = "";
-        if (!team || team.members.length === 0) {
+        const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
+        if (!team) {
+          emptyState.textContent = "班が登録されていません。「＋ 新しい班を追加」から追加してください。";
           emptyState.hidden = false;
           updateDeleteButtonState();
+          updateMemberInputState();
+          return;
+        }
+        if (!Array.isArray(team.members) || team.members.length === 0) {
+          emptyState.textContent = "メンバーが登録されていません。";
+          emptyState.hidden = false;
+          updateDeleteButtonState();
+          updateMemberInputState();
           return;
         }
         emptyState.hidden = true;
@@ -325,10 +363,11 @@
           memberList.appendChild(item);
         });
         updateDeleteButtonState();
+        updateMemberInputState();
       }
 
       function addMember(name) {
-        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
         if (!team) {
           return;
         }
@@ -341,7 +380,7 @@
       }
 
       function moveMember(index, direction) {
-        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
         if (!team) {
           return;
         }
@@ -356,7 +395,7 @@
       }
 
       function removeMember(index) {
-        const team = currentTeamKey ? teams.get(currentTeamKey) : null;
+        const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
         if (!team) {
           return;
         }
@@ -379,11 +418,29 @@
             renderMembers();
             return;
           }
-          if (!teams.has(trimmed)) {
-            teams.set(trimmed, { key: trimmed, label: trimmed, members: [] });
-            teamOrder.push(trimmed);
+          const normalizedKey = trimmed === fallbackLabel ? fallbackKey : trimmed;
+          const label = normalizedKey === fallbackKey ? fallbackLabel : trimmed;
+          const existingTeam = teams.get(normalizedKey);
+          if (existingTeam) {
+            teams.set(normalizedKey, {
+              key: normalizedKey,
+              label,
+              members: Array.isArray(existingTeam.members)
+                ? [...existingTeam.members]
+                : [],
+            });
+          } else {
+            teams.set(normalizedKey, { key: normalizedKey, label, members: [] });
           }
-          currentTeamKey = trimmed;
+          if (!teamOrder.includes(normalizedKey)) {
+            teamOrder.push(normalizedKey);
+          }
+          currentTeamKey = normalizedKey;
+          refreshGroupOptions();
+          renderMembers();
+          return;
+        }
+        if (!value) {
           refreshGroupOptions();
           renderMembers();
           return;
@@ -419,30 +476,44 @@
       });
 
       addMemberButton.addEventListener("click", () => {
-        if (memberInput.value.trim()) {
-          addMember(memberInput.value);
-          memberInput.value = "";
-          memberInput.focus();
+        if (!hasCurrentTeam()) {
+          return;
         }
+        const value = memberInput.value.trim();
+        if (!value) {
+          return;
+        }
+        addMember(value);
+        memberInput.value = "";
+        memberInput.focus();
       });
 
       memberInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          if (memberInput.value.trim()) {
-            addMember(memberInput.value);
-            memberInput.value = "";
+          if (!hasCurrentTeam()) {
+            return;
           }
+          const value = memberInput.value.trim();
+          if (!value) {
+            return;
+          }
+          addMember(value);
+          memberInput.value = "";
         }
       });
 
       saveButton.addEventListener("click", () => {
         ensureSelection();
-        if (!currentTeamKey || !teams.has(currentTeamKey)) {
+        if (!hasCurrentTeam()) {
           alert("保存対象の班を選択してください。");
           return;
         }
         const team = teams.get(currentTeamKey);
+        if (!team) {
+          alert("保存対象の班を選択してください。");
+          return;
+        }
         fetch(saveUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -466,7 +537,7 @@
 
       deleteButton.addEventListener("click", () => {
         ensureSelection();
-        if (!currentTeamKey || !teams.has(currentTeamKey)) {
+        if (!hasCurrentTeam()) {
           return;
         }
         const team = teams.get(currentTeamKey);

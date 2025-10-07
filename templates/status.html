@@ -365,6 +365,7 @@
             throw new Error("ステータスを取得できませんでした");
           }
           const data = await response.json();
+          let shouldStopPolling = false;
           const statusElement = document.getElementById("status");
           const messageElement = document.getElementById("message");
           const timestampElement = document.getElementById("timestamp");
@@ -418,7 +419,10 @@
           }
 
           if (data.status === "completed") {
-            currentReportNumber = data.report_number || "";
+            const reportNumberRaw =
+              typeof data.report_number === "string" ? data.report_number.trim() : "";
+            const shouldShowCompletionDetails = reportNumberRaw.length > 0;
+            currentReportNumber = shouldShowCompletionDetails ? reportNumberRaw : "";
             if (downloadSection && downloadLink) {
               const fileName = typeof data.final_pdf_name === "string" ? data.final_pdf_name : "";
               downloadLink.textContent = fileName
@@ -430,7 +434,7 @@
               } else {
                 downloadLink.removeAttribute("download");
               }
-              downloadSection.hidden = false;
+              downloadSection.hidden = !shouldShowCompletionDetails;
             }
             if (elapsedElement) {
               if (data.elapsed_display) {
@@ -441,24 +445,31 @@
               }
             }
             if (emailSection) {
-              emailSection.hidden = false;
+              emailSection.hidden = !shouldShowCompletionDetails;
             }
-            updateEmailText();
-            return;
+            if (shouldShowCompletionDetails) {
+              updateEmailText();
+              shouldStopPolling = true;
+            } else if (emailTextArea) {
+              emailTextArea.value = "";
+            }
+          } else {
+            if (downloadSection) {
+              downloadSection.hidden = true;
+            }
+            if (elapsedElement) {
+              elapsedElement.hidden = true;
+            }
+            if (emailSection) {
+              emailSection.hidden = true;
+            }
+            if (emailTextArea) {
+              emailTextArea.value = "";
+            }
+            currentReportNumber = "";
           }
 
-          if (downloadSection) {
-            downloadSection.hidden = true;
-          }
-          if (elapsedElement) {
-            elapsedElement.hidden = true;
-          }
-          if (emailSection) {
-            emailSection.hidden = true;
-          }
-          currentReportNumber = data.report_number || "";
-
-          if (data.status === "completed" || data.status === "failed") {
+          if (shouldStopPolling || data.status === "failed") {
             return;
           }
         } catch (error) {
