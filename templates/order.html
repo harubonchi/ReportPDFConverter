@@ -320,39 +320,59 @@
           return;
         }
 
-        const fallback = new Map();
+        const defaultIndexMap = new Map();
+        defaultOrder.forEach((name, index) => {
+          const normalizedName = typeof name === "string" ? name.trim() : String(name ?? "").trim();
+          if (normalizedName && !defaultIndexMap.has(normalizedName)) {
+            defaultIndexMap.set(normalizedName, index);
+          }
+        });
+
+        const fallbackPositions = new Map();
         items.forEach((item, index) => {
-          fallback.set(item.dataset.name, index);
+          fallbackPositions.set(item, index);
         });
 
         const getSortInfo = (item) => {
           const persons = getPersonsFromDataset(item);
-          const indices = persons
-            .map((person) => defaultOrder.indexOf(person))
-            .filter((index) => index >= 0);
-          if (indices.length > 0) {
-            return { priority: 0, index: Math.min(...indices) };
+          let bestIndex = Number.POSITIVE_INFINITY;
+          persons.forEach((person) => {
+            const normalized = typeof person === "string" ? person.trim() : String(person ?? "").trim();
+            if (!normalized) {
+              return;
+            }
+            const foundIndex = defaultIndexMap.get(normalized);
+            if (foundIndex !== undefined && foundIndex < bestIndex) {
+              bestIndex = foundIndex;
+            }
+          });
+
+          const originalIndex = fallbackPositions.get(item) ?? Number.MAX_SAFE_INTEGER;
+          if (bestIndex !== Number.POSITIVE_INFINITY) {
+            return {
+              recognized: true,
+              index: bestIndex,
+              originalIndex,
+            };
           }
-          const fallbackIndex = fallback.get(item.dataset.name);
           return {
-            priority: 1,
-            index: fallbackIndex !== undefined ? fallbackIndex : Number.MAX_SAFE_INTEGER,
+            recognized: false,
+            index: Number.MAX_SAFE_INTEGER,
+            originalIndex,
           };
         };
 
         items.sort((a, b) => {
           const aInfo = getSortInfo(a);
           const bInfo = getSortInfo(b);
-          if (aInfo.priority !== bInfo.priority) {
-            return aInfo.priority - bInfo.priority;
+          if (aInfo.recognized !== bInfo.recognized) {
+            return aInfo.recognized ? -1 : 1;
           }
           if (aInfo.index !== bInfo.index) {
             return aInfo.index - bInfo.index;
           }
-          const aFallback = fallback.get(a.dataset.name) ?? Number.MAX_SAFE_INTEGER;
-          const bFallback = fallback.get(b.dataset.name) ?? Number.MAX_SAFE_INTEGER;
-          if (aFallback !== bFallback) {
-            return aFallback - bFallback;
+          if (aInfo.originalIndex !== bInfo.originalIndex) {
+            return aInfo.originalIndex - bInfo.originalIndex;
           }
           return a.dataset.name.localeCompare(b.dataset.name, "ja");
         });
@@ -550,6 +570,20 @@
         });
       }
 
+      const openDefaultOrderEditor = (targetUrl) => {
+        const isStandalone =
+          window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+        const isIOSStandalone =
+          typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
+        const featureString = isStandalone || isIOSStandalone
+          ? "noopener=yes"
+          : "noopener=yes,width=680,height=720";
+        const openedWindow = window.open(targetUrl, "_blank", featureString);
+        if (!openedWindow) {
+          alert("ポップアップがブロックされました。ブラウザの設定をご確認ください。");
+        }
+      };
+
       if (openDefaultOrderEditorButton) {
         openDefaultOrderEditorButton.addEventListener("click", () => {
           const editorUrl = openDefaultOrderEditorButton.dataset.editorUrl;
@@ -568,7 +602,7 @@
           if (teamKey) {
             url.searchParams.set("team", teamKey);
           }
-          window.open(url.toString(), "_blank", "noopener=yes,width=680,height=720");
+          openDefaultOrderEditor(url.toString());
         });
       }
 
