@@ -24,7 +24,7 @@
       .status-box {
         border: 1px solid #cbd5e1;
         border-radius: 8px;
-        padding: 1.5rem;
+        padding: 1.25rem;
         background: #f8fafc;
         display: flex;
         flex-direction: column;
@@ -92,10 +92,18 @@
       }
       .status-footer {
         display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 1rem;
-        margin-top: 1.25rem;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+        flex-wrap: wrap;
+      }
+      .status-footer .status-meta {
+        flex: 1 1 auto;
+        min-width: 160px;
+      }
+      .status-footer .download-link {
+        margin-left: auto;
       }
       .download-link {
         display: inline-flex;
@@ -104,8 +112,8 @@
         background: #0b7285;
         color: #fff;
         text-decoration: none;
-        padding: 0.95rem 2.2rem;
-        border-radius: 12px;
+        padding: 0.8rem 1.9rem;
+        border-radius: 10px;
         font-weight: 600;
         font-size: 1rem;
         box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
@@ -206,13 +214,10 @@
         <a
           id="download-link"
           class="download-link"
-          href="#"
           rel="noopener"
           download
           hidden
-        >
-          結合済みPDFをダウンロード
-        </a>
+        ></a>
       </div>
     </div>
 
@@ -447,19 +452,22 @@
             const shouldShowCompletionDetails = reportNumberRaw.length > 0;
             currentReportNumber = shouldShowCompletionDetails ? reportNumberRaw : "";
             if (downloadLink) {
-              const fileName = typeof data.final_pdf_name === "string" ? data.final_pdf_name : "";
-              downloadLink.textContent = fileName
-                ? `${fileName} をダウンロード`
-                : "結合済みPDFをダウンロード";
-              downloadLink.href = `${downloadUrl}?t=${Date.now()}`;
-              if (fileName) {
-                downloadLink.setAttribute("download", fileName);
+              if (shouldShowCompletionDetails) {
+                const fileName =
+                  typeof data.final_pdf_name === "string" ? data.final_pdf_name.trim() : "";
+                downloadLink.textContent = `第${currentReportNumber}回報告書をダウンロード`;
+                downloadLink.href = `${downloadUrl}?t=${Date.now()}`;
+                if (fileName) {
+                  downloadLink.setAttribute("download", fileName);
+                } else {
+                  downloadLink.removeAttribute("download");
+                }
+                downloadLink.hidden = false;
               } else {
-                downloadLink.removeAttribute("download");
-              }
-              downloadLink.hidden = !shouldShowCompletionDetails;
-              if (downloadLink.hidden) {
+                downloadLink.hidden = true;
+                downloadLink.textContent = "";
                 downloadLink.removeAttribute("href");
+                downloadLink.removeAttribute("download");
               }
             }
             if (emailSection) {
@@ -477,6 +485,7 @@
           } else {
             if (downloadLink) {
               downloadLink.hidden = true;
+              downloadLink.textContent = "";
               downloadLink.removeAttribute("href");
               downloadLink.removeAttribute("download");
             }
