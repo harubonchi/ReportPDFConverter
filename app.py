@@ -29,6 +29,10 @@ from word_to_pdf_converter import convert_word_to_pdf
 from email_service import EmailConfig, send_email_with_attachment
 
 
+PERSON_NAME_SEPARATOR_PATTERN = re.compile(r"[・･.,，、．｡\s]+")
+PERSON_NORMALIZATION_PATTERN = re.compile(r"[\s・･.,，、．｡]+")
+
+
 JST = ZoneInfo("Asia/Tokyo")
 
 load_dotenv()
@@ -394,13 +398,13 @@ def _extract_person_names(sanitized_name: str) -> List[str]:
     remainder = remainder.strip()
     if not remainder:
         return []
-    tokens = re.split(r"[・,，、\.．\s]+", remainder)
+    tokens = PERSON_NAME_SEPARATOR_PATTERN.split(remainder)
     persons = [token.strip() for token in tokens if token.strip()]
     return persons
 
 
 def _normalize_person_token(value: str) -> str:
-    normalized = re.sub(r"[\s・･.,，、．]+", "", value)
+    normalized = PERSON_NORMALIZATION_PATTERN.sub("", value)
     return normalized.lower()
 
 
