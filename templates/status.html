@@ -271,6 +271,10 @@
       const progressBar = document.getElementById("progress-bar");
       const progressText = document.getElementById("progress-text");
       const downloadLink = document.getElementById("download-link");
+      if (downloadLink) {
+        downloadLink.hidden = true;
+        downloadLink.style.display = "none";
+      }
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
       const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
@@ -459,8 +463,10 @@
                   downloadLink.removeAttribute("download");
                 }
                 downloadLink.hidden = false;
+                downloadLink.style.display = "inline-flex";
               } else {
                 downloadLink.hidden = true;
+                downloadLink.style.display = "none";
                 downloadLink.textContent = "";
                 downloadLink.removeAttribute("href");
                 downloadLink.removeAttribute("download");
@@ -481,6 +487,7 @@
           } else {
             if (downloadLink) {
               downloadLink.hidden = true;
+              downloadLink.style.display = "none";
               downloadLink.textContent = "";
               downloadLink.removeAttribute("href");
               downloadLink.removeAttribute("download");
