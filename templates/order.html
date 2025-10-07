@@ -619,11 +619,28 @@
         const isIOSStandalone =
           typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
         const screenObject = typeof window.screen === "object" ? window.screen : null;
-        const screenHeight = screenObject
-          ? Number(screenObject.availHeight || screenObject.height || 0)
+        const screenHeights = [];
+        if (screenObject) {
+          if (Number.isFinite(Number(screenObject.availHeight))) {
+            screenHeights.push(Number(screenObject.availHeight));
+          }
+          if (Number.isFinite(Number(screenObject.height))) {
+            screenHeights.push(Number(screenObject.height));
+          }
+        }
+        if (window.visualViewport && Number.isFinite(Number(window.visualViewport.height))) {
+          screenHeights.push(Number(window.visualViewport.height));
+        }
+        const viewportHeight = window.innerHeight
+          ? Number(window.innerHeight)
+          : document.documentElement
+          ? Number(document.documentElement.clientHeight || 0)
           : 0;
-        const fallbackHeight = window.innerHeight ? Number(window.innerHeight) : 720;
-        const popupHeight = Math.max(480, Math.round((screenHeight || fallbackHeight) * 0.8));
+        if (viewportHeight) {
+          screenHeights.push(viewportHeight);
+        }
+        const fallbackHeight = screenHeights.length > 0 ? Math.max(...screenHeights) : 900;
+        const popupHeight = Math.max(360, Math.round(fallbackHeight * 0.8));
         const popupFeatures = [
           "width=680",
           `height=${popupHeight}`,
