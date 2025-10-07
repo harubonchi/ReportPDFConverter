@@ -63,6 +63,17 @@ class ZipEntry:
 UNGROUPED_TEAM_KEY = "__ungrouped__"
 
 
+def _normalize_team_key(value: str | None) -> str:
+    if not isinstance(value, str):
+        return UNGROUPED_TEAM_KEY
+    candidate = value.strip()
+    if not candidate:
+        return UNGROUPED_TEAM_KEY
+    if candidate in {UNGROUPED_TEAM_KEY, "班なし"}:
+        return UNGROUPED_TEAM_KEY
+    return candidate
+
+
 @dataclass
 class OrderPreferences:
     team_sequence: List[str]
@@ -128,19 +139,36 @@ class OrderManager:
             return OrderPreferences.empty()
 
         if isinstance(data, dict):
-            team_sequence = [
-                team
-                for team in data.get("team_sequence", [])
-                if isinstance(team, str)
-            ]
+            team_sequence: List[str] = []
+            raw_sequence = data.get("team_sequence", [])
+            if isinstance(raw_sequence, list):
+                for item in raw_sequence:
+                    if not isinstance(item, str):
+                        continue
+                    normalized = _normalize_team_key(item)
+                    if normalized not in team_sequence:
+                        team_sequence.append(normalized)
+
             member_sequences: Dict[str, List[str]] = {}
             raw_members = data.get("member_sequences", {})
             if isinstance(raw_members, dict):
                 for key, value in raw_members.items():
-                    if isinstance(key, str) and isinstance(value, list):
-                        member_sequences[key] = [
-                            name for name in value if isinstance(name, str)
-                        ]
+                    if not isinstance(key, str) or not isinstance(value, list):
+                        continue
+                    normalized_key = _normalize_team_key(key)
+                    cleaned_members: List[str] = []
+                    for name in value:
+                        if not isinstance(name, str):
+                            continue
+                        cleaned_members.append(name)
+                    if normalized_key in member_sequences:
+                        existing = member_sequences[normalized_key]
+                        for name in cleaned_members:
+                            if name not in existing:
+                                existing.append(name)
+                    else:
+                        member_sequences[normalized_key] = cleaned_members
+
             if UNGROUPED_TEAM_KEY in member_sequences and not member_sequences[
                 UNGROUPED_TEAM_KEY
             ]:
@@ -183,7 +211,7 @@ class OrderManager:
             self._write_preferences(merged)
 
     def save_member_sequence(self, team_key: str, members: List[str]) -> None:
-        normalized_team = team_key or UNGROUPED_TEAM_KEY
+        normalized_team = _normalize_team_key(team_key)
         cleaned_members: List[str] = []
         for member in members:
             if not isinstance(member, str):
@@ -206,7 +234,7 @@ class OrderManager:
             self._write_preferences(preferences)
 
     def delete_member_sequence(self, team_key: str) -> None:
-        normalized_team = team_key or UNGROUPED_TEAM_KEY
+        normalized_team = _normalize_team_key(team_key)
         with self._lock:
             preferences = self.load_preferences()
             preferences.member_sequences.pop(normalized_team, None)
@@ -225,9 +253,12 @@ class OrderManager:
                 continue
             raw_team_name = (entry.team_name or "").strip()
             if not raw_team_name:
+                # 班名が無い場合は保存しない
+                continue
+            team_key = _normalize_team_key(raw_team_name)
+            if team_key == UNGROUPED_TEAM_KEY:
                 # 自動生成される「班なし」グループは保存しない
                 continue
-            team_key = raw_team_name
             if team_key not in team_sequence:
                 team_sequence.append(team_key)
             member_list = member_sequences.setdefault(team_key, [])
@@ -246,7 +277,10 @@ class OrderManager:
         team_appearance: List[str] = []
 
         for entry in entries:
-            team_key = entry.team_name or UNGROUPED_TEAM_KEY
+            if entry.team_name:
+                team_key = _normalize_team_key(entry.team_name)
+            else:
+                team_key = UNGROUPED_TEAM_KEY
             team_map.setdefault(team_key, []).append(entry)
             if team_key not in team_appearance:
                 team_appearance.append(team_key)
@@ -908,15 +942,17 @@ def save_default_member_order() -> Response:
             normalized_members.append(stripped)
 
     if not team_key:
-        team_key = UNGROUPED_TEAM_KEY
+        return jsonify({"error": "班名を入力してください。"}), 400
 
-    order_manager.save_member_sequence(team_key, normalized_members)
+    normalized_team = _normalize_team_key(team_key)
+
+    order_manager.save_member_sequence(normalized_team, normalized_members)
 
     return jsonify(
         {
             "status": "ok",
-            "team_key": team_key,
-            "label": _team_display_label(team_key),
+            "team_key": normalized_team,
+            "label": _team_display_label(normalized_team),
             "members": normalized_members,
         }
     )
@@ -933,11 +969,13 @@ def delete_default_member_order() -> Response:
         team_key = str(team_key_raw or "").strip()
 
     if not team_key:
-        team_key = UNGROUPED_TEAM_KEY
+        return jsonify({"error": "班を指定してください。"}), 400
 
-    order_manager.delete_member_sequence(team_key)
+    normalized_team = _normalize_team_key(team_key)
 
-    return jsonify({"status": "ok", "team_key": team_key})
+    order_manager.delete_member_sequence(normalized_team)
+
+    return jsonify({"status": "ok", "team_key": normalized_team})
 
 
 @app.route("/api/default-order", methods=["GET"])
