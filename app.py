@@ -793,30 +793,38 @@ def _execute_with_progress(job_id: str, estimated_seconds: int, task: Callable[[
     worker = threading.Thread(target=_runner, daemon=True)
     worker.start()
 
-    increments_emitted = 0
+    increments_emitted = 0.0
+    estimated_seconds_float = float(estimated_seconds)
+    progress_cap = estimated_seconds_float * 0.99
+    min_increment = 0.001
+
     start_time = time.monotonic()
 
-    while not completion_event.wait(timeout=0.2):
+    def _emit_progress(target: float, *, force: bool = False) -> None:
+        nonlocal increments_emitted
+        delta = target - increments_emitted
+        if delta <= 0:
+            return
+        if not force and delta < min_increment:
+            return
+        _update_job(job_id, progress_increment=delta)
+        increments_emitted += delta
+
+    while not completion_event.wait(timeout=0.05):
         elapsed = time.monotonic() - start_time
-        expected_progress = min(estimated_seconds, int(elapsed))
-        delta = expected_progress - increments_emitted
-        if delta > 0:
-            _update_job(job_id, progress_increment=delta)
-            increments_emitted += delta
+        target = min(elapsed, progress_cap)
+        _emit_progress(target)
 
     worker.join()
 
     total_elapsed = time.monotonic() - start_time
-    expected_progress = min(estimated_seconds, int(math.ceil(total_elapsed)))
-    delta = expected_progress - increments_emitted
-    if delta > 0:
-        _update_job(job_id, progress_increment=delta)
-        increments_emitted += delta
+    target = min(total_elapsed, progress_cap)
+    _emit_progress(target, force=True)
 
     if error_container:
         raise error_container[0]
 
-    remaining = estimated_seconds - increments_emitted
+    remaining = estimated_seconds_float - increments_emitted
     if remaining > 0:
         _update_job(job_id, progress_increment=remaining)
         increments_emitted += remaining
