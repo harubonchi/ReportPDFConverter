@@ -860,9 +860,10 @@ def _process_job(job_id: str) -> None:
         num_entries = len(ordered_entries)
         merge_seconds_estimate = max(1, num_entries * MERGE_SECONDS_PER_FILE)
         conversion_seconds_estimate = num_entries * CONVERSION_SECONDS_PER_FILE
-        total_word_bytes = sum(max(entry.file_size, 0) for entry in ordered_entries)
-        estimated_pdf_bytes = int(total_word_bytes * 0.5)
-        email_seconds_estimate = _estimate_email_seconds(estimated_pdf_bytes)
+        #total_word_bytes = sum(max(entry.file_size, 0) for entry in ordered_entries)
+        #estimated_pdf_bytes = int(total_word_bytes * 0.5)
+        #email_seconds_estimate = _estimate_email_seconds(estimated_pdf_bytes)
+        email_seconds_estimate = conversion_seconds_estimate * 5
         estimated_total_seconds = (
             PREPARATION_SECONDS
             + conversion_seconds_estimate
