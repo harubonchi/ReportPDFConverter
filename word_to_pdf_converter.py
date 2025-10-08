@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Iterable
 
 from docx2pdf import convert as docx2pdf_convert
 
@@ -20,21 +21,50 @@ def _convert_with_docx2pdf(source: Path, destination: Path) -> None:
 LIBREOFFICE_PROFILE_DIR = Path.home() / ".config/libreoffice/4/user"
 
 
+def _iter_env_candidates(env_value: str | None) -> Iterable[Path]:
+    if not env_value:
+        return []
+
+    env_path = Path(env_value)
+    if env_path.is_dir():
+        return (env_path / name for name in ("python", "python3", "python.exe"))
+    return [env_path]
+
+
 def _libreoffice_python_candidates() -> list[Path]:
     candidates: list[Path] = []
-    env_value = os.environ.get("LIBREOFFICE_PYTHON")
-    if env_value:
-        candidates.append(Path(env_value))
+    candidates.extend(_iter_env_candidates(os.environ.get("LIBREOFFICE_PYTHON")))
+
+    python_names = ("python", "python3", "python.exe")
+
+    program_dirs: set[Path] = {
+        Path("/usr/lib/libreoffice/program"),
+        Path("/usr/lib64/libreoffice/program"),
+        Path("/usr/local/lib/libreoffice/program"),
+        Path("/usr/bin"),
+        Path("/Applications/LibreOffice.app/Contents/MacOS"),
+        Path("/Applications/LibreOffice.app/Contents/Resources"),
+        Path("C:/Program Files/LibreOffice/program"),
+        Path("C:/Program Files (x86)/LibreOffice/program"),
+    }
+
+    soffice_path = shutil.which("soffice")
+    if soffice_path:
+        soffice_dir = Path(soffice_path).resolve().parent
+        program_dirs.add(soffice_dir)
+        program_dirs.add(soffice_dir / "program")
+
+    for directory in program_dirs:
+        for name in python_names:
+            candidates.append(directory / name)
+
     candidates.extend(
         [
-            Path("/usr/lib/libreoffice/program/python"),
             Path("/usr/bin/libreoffice-python"),
-            Path("/Applications/LibreOffice.app/Contents/MacOS/python"),
-            Path("/Applications/LibreOffice.app/Contents/Resources/python"),
-            Path("C:/Program Files/LibreOffice/program/python.exe"),
-            Path("C:/Program Files (x86)/LibreOffice/program/python.exe"),
+            Path("/usr/bin/libreoffice-python3"),
         ]
     )
+
     return candidates
 
 
