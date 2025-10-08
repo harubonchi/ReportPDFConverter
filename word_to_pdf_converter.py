@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -19,29 +20,65 @@ def _convert_with_docx2pdf(source: Path, destination: Path) -> None:
 LIBREOFFICE_PROFILE_DIR = Path.home() / ".config/libreoffice/4/user"
 
 
-def _convert_with_libreoffice(source: Path, output_dir: Path) -> Path:
-    user_installation_arg = (
-        f"-env:UserInstallation={LIBREOFFICE_PROFILE_DIR.resolve().as_uri()}"
+def _libreoffice_python_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    env_value = os.environ.get("LIBREOFFICE_PYTHON")
+    if env_value:
+        candidates.append(Path(env_value))
+    candidates.extend(
+        [
+            Path("/usr/lib/libreoffice/program/python"),
+            Path("/usr/bin/libreoffice-python"),
+            Path("/Applications/LibreOffice.app/Contents/MacOS/python"),
+            Path("/Applications/LibreOffice.app/Contents/Resources/python"),
+            Path("C:/Program Files/LibreOffice/program/python.exe"),
+            Path("C:/Program Files (x86)/LibreOffice/program/python.exe"),
+        ]
     )
-    command = [
-        "soffice",
-        "--headless",
-        user_installation_arg,
-        "--convert-to",
-        "pdf",
-        "--outdir",
-        str(output_dir),
-        str(source),
-    ]
-    completed = subprocess.run(command, check=False, capture_output=True)
-    if completed.returncode != 0:
-        raise ConversionError(
-            "LibreOffice conversion failed: "
-            + completed.stderr.decode("utf-8", errors="ignore")
-        )
+    return candidates
+
+
+def _find_libreoffice_python() -> Path:
+    for candidate in _libreoffice_python_candidates():
+        if candidate.exists() and os.access(candidate, os.X_OK):
+            return candidate
+    raise ConversionError(
+        "LibreOffice Python executable not found. Set LIBREOFFICE_PYTHON environment variable."
+    )
+
+
+def _convert_with_libreoffice(source: Path, output_dir: Path) -> Path:
+    script_path = Path(__file__).resolve().parent / "libreoffice_uno_converter.py"
+    if not script_path.exists():
+        raise ConversionError("UNO conversion script not found.")
+
     output_path = output_dir / (source.stem + ".pdf")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    libreoffice_python = _find_libreoffice_python()
+
+    command = [
+        str(libreoffice_python),
+        str(script_path),
+        str(source.resolve()),
+        str(output_path.resolve()),
+        "--line-spacing",
+        "1.15",
+    ]
+
+    LIBREOFFICE_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+    command.extend(["--user-profile", str(LIBREOFFICE_PROFILE_DIR.resolve())])
+
+    completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        raise ConversionError(
+            "LibreOffice conversion failed: " + (stderr or "unknown error from UNO script")
+        )
+
     if not output_path.exists():
         raise ConversionError("LibreOffice conversion did not produce an output file.")
+
     return output_path
 
 

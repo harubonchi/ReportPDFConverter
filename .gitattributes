@@ -11,3 +11,5 @@
 *.dll  -text
 *.so   -text
 *.dylib -text
+*.ttf  -text
+*.TTF  -text
