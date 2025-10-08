@@ -1,12 +1,15 @@
 from __future__ import annotations
 
-from pathlib import Path
 import os
 import shlex
 import tempfile
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import jpype
 from jpype import JClass, JException
+
+from docx_image_preprocessor import preprocess_docx_images
 
 # JVM/クラスパスのデフォルト値は環境変数で上書きできるようにし、
 # コンテナや Linux 環境でもそのまま動作するようにする。
@@ -185,12 +188,28 @@ def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
         raise ConversionError(f"Unsupported file type: {source.suffix}")
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{source.stem}.pdf"
+    working_source = source
+    temp_docx: TemporaryDirectory | None = None
+    if source.suffix.lower() == ".docx":
+        temp_docx = TemporaryDirectory(prefix="optimized_docx_")
+        optimized_path = Path(temp_docx.name) / source.name
+        optimized_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            preprocess_docx_images(source, optimized_path)
+            working_source = optimized_path
+        except Exception:
+            temp_docx.cleanup()
+            temp_docx = None
+            working_source = source
     try:
-        _convert_with_aspose(source, output_path)
+        _convert_with_aspose(working_source, output_path)
     except ConversionError:
         raise
     except Exception as exc:  # noqa: BLE001
         raise ConversionError(f"Failed to convert {source.name} to PDF: {exc}") from exc
+    finally:
+        if temp_docx is not None:
+            temp_docx.cleanup()
     if not output_path.exists():
         raise ConversionError(f"Conversion completed but {output_path} was not created.")
     return output_path
