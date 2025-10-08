@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import threading
+import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Dict, List
+from typing import Callable, Dict, List, TypeVar
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -49,6 +51,15 @@ ORDER_FILE = DATA_DIR / "order.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
+
+
+PREPARATION_SECONDS = 1
+CONVERSION_SECONDS_PER_FILE = 1
+MERGE_SECONDS_PER_FILE = 1
+EMAIL_SECONDS_PER_5MB = 30
+BYTES_PER_MEGABYTE = 1024 * 1024
+
+T = TypeVar("T")
 
 
 def _cleanup_data_directories() -> None:
@@ -754,6 +765,65 @@ def _update_job(
         job.updated_at = now
 
 
+def _estimate_email_seconds(file_size_bytes: int) -> int:
+    if file_size_bytes <= 0:
+        return 1
+    estimated = math.ceil(
+        file_size_bytes * EMAIL_SECONDS_PER_5MB / (5 * BYTES_PER_MEGABYTE)
+    )
+    return max(1, estimated)
+
+
+def _execute_with_progress(job_id: str, estimated_seconds: int, task: Callable[[], T]) -> T:
+    if estimated_seconds <= 0:
+        return task()
+
+    completion_event = threading.Event()
+    result_container: Dict[str, T] = {}
+    error_container: list[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            result_container["value"] = task()
+        except BaseException as exc:  # noqa: BLE001
+            error_container.append(exc)
+        finally:
+            completion_event.set()
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+
+    increments_emitted = 0
+    start_time = time.monotonic()
+
+    while not completion_event.wait(timeout=0.2):
+        elapsed = time.monotonic() - start_time
+        expected_progress = min(estimated_seconds, int(elapsed))
+        delta = expected_progress - increments_emitted
+        if delta > 0:
+            _update_job(job_id, progress_increment=delta)
+            increments_emitted += delta
+
+    worker.join()
+
+    total_elapsed = time.monotonic() - start_time
+    expected_progress = min(estimated_seconds, int(math.ceil(total_elapsed)))
+    delta = expected_progress - increments_emitted
+    if delta > 0:
+        _update_job(job_id, progress_increment=delta)
+        increments_emitted += delta
+
+    if error_container:
+        raise error_container[0]
+
+    remaining = estimated_seconds - increments_emitted
+    if remaining > 0:
+        _update_job(job_id, progress_increment=remaining)
+        increments_emitted += remaining
+
+    return result_container.get("value")
+
+
 def _process_job(job_id: str) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -782,11 +852,16 @@ def _process_job(job_id: str) -> None:
         if not ordered_entries:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
-        total_steps = len(ordered_entries) + 3
+        num_entries = len(ordered_entries)
+        merge_seconds_estimate = max(1, num_entries * MERGE_SECONDS_PER_FILE)
+        conversion_seconds_estimate = num_entries * CONVERSION_SECONDS_PER_FILE
+        estimated_total_seconds = (
+            PREPARATION_SECONDS + conversion_seconds_estimate + merge_seconds_estimate
+        )
         _update_job(
             job_id,
-            progress_total=total_steps,
-            progress_increment=1,
+            progress_total=estimated_total_seconds,
+            progress_increment=PREPARATION_SECONDS,
             message="PDF変換の準備をしています…",
         )
 
@@ -801,23 +876,34 @@ def _process_job(job_id: str) -> None:
                 raise FileNotFoundError(f"展開後のファイルが見つかりません: {entry.archive_name}")
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
             pdf_paths.append(pdf_path)
-            _update_job(job_id, progress_increment=1)
+            _update_job(job_id, progress_increment=CONVERSION_SECONDS_PER_FILE)
 
         merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
-        merge_pdfs(pdf_paths, merged_path)
-        _update_job(job_id, progress_increment=1)
+
+        def _merge_task() -> Path:
+            return merge_pdfs(pdf_paths, merged_path)
+
+        _execute_with_progress(job_id, merge_seconds_estimate, _merge_task)
+
+        merged_size = merged_path.stat().st_size if merged_path.exists() else 0
+        email_seconds_estimate = _estimate_email_seconds(merged_size)
+        estimated_total_seconds += email_seconds_estimate
+        _update_job(job_id, progress_total=estimated_total_seconds)
 
         if EMAIL_CONFIG.is_configured:
             _update_job(job_id, message="結合したPDFをメールで送信しています…")
-            send_email_with_attachment(
-                config=EMAIL_CONFIG,
-                recipient=job.email,
-                subject=f"第{report_number}回報告書",
-                body="",
-                attachment_path=merged_path,
-            )
-            _update_job(job_id, progress_increment=1)
+
+            def _send_email_task() -> None:
+                send_email_with_attachment(
+                    config=EMAIL_CONFIG,
+                    recipient=job.email,
+                    subject=f"第{report_number}回報告書",
+                    body="",
+                    attachment_path=merged_path,
+                )
+
+            _execute_with_progress(job_id, email_seconds_estimate, _send_email_task)
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
         _update_job(
