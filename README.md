@@ -22,14 +22,14 @@
    ```bash
    pip install -r requirements.txt
    ```
-2. 環境変数を設定します。以下の内容をテキストファイルにコピペし、メールサーバの認証情報を設定したら.env(拡張子なし)というファイル名で保存してください。
+2. 環境変数を設定します。以下の内容をテキストファイルにコピペし、メールサーバの認証情報を設定したら.env(拡張子なし)というファイル名で保存してください。これは完成したPDFをメールで送信する配信元の設定です。gmailの場合、自分のメールアドレスとアプリパスワード、smtp.gmail.comをサーバーに指定します。
    ```
-   EMAIL_SENDER=example@example.com
-   EMAIL_USERNAME=example@example.com
-   EMAIL_PASSWORD=your-password
-   EMAIL_SMTP_SERVER=smtp.example.com
+   EMAIL_SENDER='example@example.com'
+   EMAIL_USERNAME='example@example.com'
+   EMAIL_PASSWORD='your-password'
+   EMAIL_SMTP_SERVER='smtp.example.com'
    EMAIL_SMTP_PORT=587
-   EMAIL_USE_TLS=true
+   EMAIL_USE_TLS='true'
    ```
    .envファイルはapp.pyと同じディレクトリに配置してください。
    > **注意**: `.env` には個人情報が含まれます。リポジトリにコミットしたり共有したりしないようご注意ください。
