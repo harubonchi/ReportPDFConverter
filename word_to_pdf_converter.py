@@ -7,7 +7,7 @@ from jpype import JClass
 
 # JVM/クラスパスのデフォルト値は環境変数で上書きできるようにし、
 # コンテナや Linux 環境でもそのまま動作するようにする。
-ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-20.12-jdk17-cracked.jar")
+ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-20.12-jdk17.jar")
 # 任意で JVM の明示パスを指定したい場合は JVM_PATH を利用する。
 _ENV_JVM_PATH = os.environ.get("JVM_PATH")
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
