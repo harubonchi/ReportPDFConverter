@@ -67,14 +67,6 @@ RUN set -eux; \
     fc-cache -f -v
 # ---- ここまで ----
 
-# ---- 追加：Word 寄せ LibreOffice プロファイルを同梱 ----
-# プロジェクト直下に registrymodifications.xcu を置いておく想定
-COPY registrymodifications.xcu /tmp/registrymodifications.xcu
-RUN set -eux; \
-    mkdir -p /root/.config/libreoffice/4/user/; \
-    mv /tmp/registrymodifications.xcu /root/.config/libreoffice/4/user/registrymodifications.xcu
-# ---- ここまで ----
-
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
