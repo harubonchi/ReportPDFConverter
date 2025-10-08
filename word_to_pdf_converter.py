@@ -9,7 +9,7 @@ from jpype import JClass
 JAVA_HOME = r"C:\Program Files\Java\jdk-18.0.2"
 
 # 正規の Aspose.Words for Java の JAR を同ディレクトリに置く
-ASPOSE_JAR_NAME = "aspose-words-20.12-jdk17.jar"
+ASPOSE_JAR_NAME = "aspose-words-20.12-jdk17-cracked.jar"
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
 
 
@@ -41,16 +41,6 @@ def _start_jvm() -> None:
     jvm_path = _jvm_path()
     # 明示JVM + クラスパス
     jpype.startJVM(jvm_path, f"-Djava.class.path={str(jar_path)}")
-
-def ensure_jvm_started() -> None:
-    """Ensure that the JVM is started.
-
-    Flaskアプリから利用するとき、バックグラウンドスレッド内でJVMを起動すると
-    Windows環境で失敗する場合があるため、メインスレッドから明示的に起動できる
-    ように公開する。
-    """
-
-    _start_jvm()
 
 
 def _java_diagnostics() -> None:
@@ -93,6 +83,31 @@ def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
         raise ConversionError(f"Conversion completed but {output_path} was not created.")
     return output_path
 
+
+# -----------------------------
+# 自己診断スモークテスト + input.docx 実変換
+# -----------------------------
+def _self_test() -> None:
+    """JVM起動→Java環境表示→空PDF生成で検証."""
+    _start_jvm()
+    _java_diagnostics()
+
+    # Aspose で空ドキュメント→PDF保存（最小I/O）
+    Document = JClass("com.aspose.words.Document")
+    DocumentBuilder = JClass("com.aspose.words.DocumentBuilder")
+    tmp_pdf = Path(__file__).with_name("_selftest.pdf").resolve()
+
+    doc = Document()
+    builder = DocumentBuilder(doc)
+    builder.writeln("Aspose.Words self-test OK.")
+    doc.save(str(tmp_pdf))
+
+    size = tmp_pdf.stat().st_size if tmp_pdf.exists() else 0
+    print(f"Self-test PDF written: {tmp_pdf} ({size} bytes)")
+    if size <= 0:
+        raise ConversionError("Self-test failed: PDF was not created or is empty.")
+
+
 def _test_convert_input_docx() -> None:
     """プロジェクト直下の input.docx を output.pdf に変換して検証."""
     source = Path(__file__).with_name("input.docx").resolve()
@@ -108,4 +123,7 @@ def _test_convert_input_docx() -> None:
 
 
 if __name__ == "__main__":
+    # 1) JVM/Aspose 自己診断
+    _self_test()
+    # 2) input.docx → output.pdf 実変換テスト
     _test_convert_input_docx()

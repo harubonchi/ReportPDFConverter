@@ -28,7 +28,7 @@ from flask import (
 )
 
 from pdf_merge import merge_pdfs
-from word_to_pdf_converter import convert_word_to_pdf, ensure_jvm_started
+from word_to_pdf_converter import convert_word_to_pdf
 from email_service import EmailConfig, send_email_with_attachment
 
 
@@ -415,11 +415,6 @@ class JobState:
 
 app = Flask(__name__)
 app.secret_key = "gain-report-emailer"
-
-# JPypeによるJVMの起動はメインスレッドで行う必要があるため、Flask起動時に
-# 明示的に初期化しておく。これによりバックグラウンドスレッドでのPDF変換時に
-# JVM初期化エラーが発生するのを防ぐ。
-ensure_jvm_started()
 
 executor = ThreadPoolExecutor(max_workers=2)
 jobs: Dict[str, JobState] = {}
