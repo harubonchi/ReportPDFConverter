@@ -9,10 +9,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice \
+        openjdk-17-jdk \
         fonts-noto-cjk \
         fontconfig \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    PATH="${JAVA_HOME}/bin:${PATH}"
 
 # ---- ローカル購入フォントを最優先で組み込み（MS Gothic / MS Mincho / Times New Roman）----
 # プロジェクト直下に置いた TTF をコンテナのシステムフォントに配置
