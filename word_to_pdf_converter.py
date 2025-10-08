@@ -42,6 +42,16 @@ def _start_jvm() -> None:
     # 明示JVM + クラスパス
     jpype.startJVM(jvm_path, f"-Djava.class.path={str(jar_path)}")
 
+def ensure_jvm_started() -> None:
+    """Ensure that the JVM is started.
+
+    Flaskアプリから利用するとき、バックグラウンドスレッド内でJVMを起動すると
+    Windows環境で失敗する場合があるため、メインスレッドから明示的に起動できる
+    ように公開する。
+    """
+
+    _start_jvm()
+
 
 def _java_diagnostics() -> None:
     """JVM/Javaの基本情報を表示（自己診断用）。"""
