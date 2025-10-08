@@ -128,9 +128,20 @@ def _convert_with_aspose(source: Path, destination: Path) -> None:
         MemorySettings = None
         MemorySetting = None
 
+    try:
+        PdfSaveOptions = JClass("com.aspose.words.PdfSaveOptions")
+    except (TypeError, RuntimeError):  # pragma: no cover - depends on Aspose version
+        PdfSaveOptions = None
+
     temp_dir = ASPOSE_TEMP_DIR.expanduser()
     temp_dir.mkdir(parents=True, exist_ok=True)
     temp_dir = temp_dir.resolve()
+
+    if MemorySettings:
+        try:
+            MemorySettings.setTempFolder(str(temp_dir))
+        except (AttributeError, TypeError):  # pragma: no cover - defensive
+            pass
 
     load_options = LoadOptions()
     load_options.setTempFolder(str(temp_dir))
@@ -145,9 +156,20 @@ def _convert_with_aspose(source: Path, destination: Path) -> None:
         except (AttributeError, TypeError):  # pragma: no cover - defensive
             pass
 
+    pdf_save_options = None
+    if PdfSaveOptions:
+        try:
+            pdf_save_options = PdfSaveOptions()
+            pdf_save_options.setTempFolder(str(temp_dir))
+        except (AttributeError, TypeError):  # pragma: no cover - defensive
+            pdf_save_options = None
+
     try:
         document = Document(str(source), load_options)
-        document.save(str(destination))
+        if pdf_save_options is not None:
+            document.save(str(destination), pdf_save_options)
+        else:
+            document.save(str(destination))
     except JException as exc:
         if isinstance(exc, FileCorruptedException):
             raise ConversionError(
