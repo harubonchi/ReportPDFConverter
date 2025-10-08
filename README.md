@@ -15,6 +15,7 @@
 - Python 3.10 以上
 - PDF 変換・メール送信用にインターネット接続
 - SMTP サーバーの認証情報（メール送信に使用）
+- Linux など Microsoft Word が利用できない環境では LibreOffice (`soffice`) が必要です
 
 ## セットアップ手順
 
