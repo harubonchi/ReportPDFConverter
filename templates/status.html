@@ -75,9 +75,8 @@
       }
       .progress-bar {
         height: 100%;
-        width: 0%;
+        width: 0;
         background: linear-gradient(90deg, #0b7285, #38bdf8);
-        transition: width 0.12s linear;
       }
       .progress-text {
         margin-top: 0.5rem;
@@ -283,6 +282,170 @@
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
       const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
+      const animationIntervalMs = 10;
+      const nowFn = () =>
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      let animationTimerId = null;
+      let targetPercentValue = 0;
+      let displayedPercentValue = 0;
+      let displayedPixelValue = 0;
+      let pixelAccumulator = 0;
+      let percentPerSecondValue = 0;
+      let lastPercentSample = 0;
+      let lastPercentSampleTime = nowFn();
+
+      function syncProgressBarWidth() {
+        if (!progressTrack || !progressBar) {
+          return;
+        }
+        const trackWidth = progressTrack.clientWidth;
+        if (trackWidth <= 0) {
+          return;
+        }
+        const targetPixels = Math.round((targetPercentValue / 100) * trackWidth);
+        displayedPixelValue = Math.min(
+          targetPixels,
+          Math.round((displayedPercentValue / 100) * trackWidth)
+        );
+        displayedPercentValue = trackWidth
+          ? (displayedPixelValue / trackWidth) * 100
+          : displayedPercentValue;
+        progressBar.style.width = `${displayedPixelValue}px`;
+      }
+
+      function stepProgressAnimation() {
+        if (!progressTrack || !progressBar) {
+          return;
+        }
+        const trackWidth = progressTrack.clientWidth;
+        if (trackWidth <= 0) {
+          return;
+        }
+        const targetPixels = Math.round((targetPercentValue / 100) * trackWidth);
+        if (displayedPixelValue >= targetPixels) {
+          displayedPixelValue = targetPixels;
+          displayedPercentValue = trackWidth
+            ? (displayedPixelValue / trackWidth) * 100
+            : targetPercentValue;
+          progressBar.style.width = `${displayedPixelValue}px`;
+          if (
+            targetPercentValue >= 100 &&
+            animationTimerId !== null &&
+            displayedPixelValue === targetPixels
+          ) {
+            clearInterval(animationTimerId);
+            animationTimerId = null;
+          }
+          return;
+        }
+
+        let effectivePercentPerSecond = percentPerSecondValue;
+        if (!Number.isFinite(effectivePercentPerSecond) || effectivePercentPerSecond <= 0) {
+          const remainingPercent = targetPercentValue - displayedPercentValue;
+          effectivePercentPerSecond = remainingPercent > 0 ? Math.max(remainingPercent * 0.5, 5) : 0;
+        }
+        if (effectivePercentPerSecond <= 0) {
+          return;
+        }
+
+        const percentIncrement =
+          effectivePercentPerSecond * (animationIntervalMs / 1000);
+        if (percentIncrement <= 0) {
+          return;
+        }
+
+        const incrementPixels = (percentIncrement / 100) * trackWidth;
+        if (incrementPixels <= 0) {
+          return;
+        }
+
+        pixelAccumulator += incrementPixels;
+        if (pixelAccumulator < 1) {
+          return;
+        }
+
+        let pixelsToAdvance = Math.floor(pixelAccumulator);
+        const remainingPixels = targetPixels - displayedPixelValue;
+        if (pixelsToAdvance > remainingPixels) {
+          pixelsToAdvance = remainingPixels;
+          pixelAccumulator = 0;
+        } else {
+          pixelAccumulator -= pixelsToAdvance;
+        }
+
+        if (pixelsToAdvance <= 0) {
+          return;
+        }
+
+        displayedPixelValue += pixelsToAdvance;
+        displayedPercentValue = trackWidth
+          ? (displayedPixelValue / trackWidth) * 100
+          : displayedPercentValue;
+        progressBar.style.width = `${displayedPixelValue}px`;
+      }
+
+      function ensureProgressAnimation() {
+        if (animationTimerId === null) {
+          animationTimerId = setInterval(stepProgressAnimation, animationIntervalMs);
+        }
+      }
+
+      function resetProgressAnimation() {
+        if (animationTimerId !== null) {
+          clearInterval(animationTimerId);
+          animationTimerId = null;
+        }
+        targetPercentValue = 0;
+        displayedPercentValue = 0;
+        displayedPixelValue = 0;
+        pixelAccumulator = 0;
+        percentPerSecondValue = 0;
+        lastPercentSample = 0;
+        lastPercentSampleTime = nowFn();
+        if (progressBar) {
+          progressBar.style.width = "0px";
+        }
+      }
+
+      function updateProgressTarget(nextPercent) {
+        if (typeof nextPercent !== "number" || Number.isNaN(nextPercent)) {
+          return;
+        }
+        const clamped = Math.min(100, Math.max(0, nextPercent));
+        const currentTime = nowFn();
+        if (clamped !== lastPercentSample) {
+          const percentDelta = clamped - lastPercentSample;
+          const elapsedMs = currentTime - lastPercentSampleTime;
+          if (percentDelta > 0 && elapsedMs > 0) {
+            const computedPercentPerSecond = (percentDelta / elapsedMs) * 1000;
+            if (
+              Number.isFinite(computedPercentPerSecond) &&
+              computedPercentPerSecond > 0
+            ) {
+              percentPerSecondValue = computedPercentPerSecond;
+            }
+          } else if (percentDelta < 0) {
+            percentPerSecondValue = 0;
+          }
+          lastPercentSample = clamped;
+          lastPercentSampleTime = currentTime;
+        }
+
+        targetPercentValue = clamped;
+        if (displayedPercentValue > targetPercentValue) {
+          displayedPercentValue = targetPercentValue;
+          pixelAccumulator = 0;
+          syncProgressBarWidth();
+        }
+        ensureProgressAnimation();
+      }
+
+      window.addEventListener("resize", () => {
+        pixelAccumulator = 0;
+        syncProgressBarWidth();
+      });
 
       function populateTeamOptions(options) {
         if (!teamSelect || teamOptionsInitialized) {
@@ -430,11 +593,12 @@
           if (progressWrapper) {
             if (totalSteps > 0) {
               progressWrapper.hidden = false;
-              if (progressBar) {
-                progressBar.style.width = `${safePercent}%`;
-              }
+              updateProgressTarget(safePercent);
               if (progressTrack) {
-                progressTrack.setAttribute("aria-valuenow", String(safePercent));
+                progressTrack.setAttribute(
+                  "aria-valuenow",
+                  String(Math.round(safePercent))
+                );
               }
               if (progressText) {
                 progressText.textContent = `進捗: ${safePercent}%`;
@@ -444,6 +608,7 @@
               if (progressText) {
                 progressText.textContent = "";
               }
+              resetProgressAnimation();
             }
           }
 
