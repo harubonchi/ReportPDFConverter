@@ -77,7 +77,7 @@
         height: 100%;
         width: 0%;
         background: linear-gradient(90deg, #0b7285, #38bdf8);
-        transition: width 0.3s ease;
+        transition: width 0.12s linear;
       }
       .progress-text {
         margin-top: 0.5rem;
@@ -192,7 +192,7 @@
     <h1>処理状況</h1>
     <p>
       ジョブIDは <strong>{{ job_id }}</strong> です。<br>
-      処理が完了するまで数秒おきに自動更新されます。
+      処理が完了するまで約0.1秒ごとに自動更新されます。
     </p>
 
     <div class="status-box">
@@ -437,7 +437,7 @@
                 progressTrack.setAttribute("aria-valuenow", String(safePercent));
               }
               if (progressText) {
-                progressText.textContent = `進捗: ${Math.min(currentSteps, totalSteps)}/${totalSteps} (${safePercent}%)`;
+                progressText.textContent = `進捗: ${safePercent}%`;
               }
             } else {
               progressWrapper.hidden = true;
@@ -530,7 +530,7 @@
             messageElement.hidden = false;
           }
         }
-        setTimeout(refreshStatus, 3000);
+        setTimeout(refreshStatus, 100);
       }
 
       refreshStatus();
