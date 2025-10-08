@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry"
+           xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+  <!-- Writer 互換設定：Wordの既定に近づけるための代表項目 -->
+  <oor:item oor:path="/org.openoffice.Office.Writer/Compatibility">
+    <!-- 段落・表の間隔を自動加算しない（Wordの感覚に近づける） -->
+    <oor:prop oor:name="AddSpacingBetweenParagraphs" oor:op="fuse">
+      <oor:value>false</oor:value>
+    </oor:prop>
+    <oor:prop oor:name="AddParaSpacingToTableCells" oor:op="fuse">
+      <oor:value>false</oor:value>
+    </oor:prop>
+
+    <!-- プリンタメトリクス非依存（Wordの画面基準に寄せる） -->
+    <oor:prop oor:name="UsePrinterMetrics" oor:op="fuse">
+      <oor:value>false</oor:value>
+    </oor:prop>
+
+    <!-- Word互換寄せ：行頭/行末の処理や行送りの拡張抑止 -->
+    <oor:prop oor:name="DoNotExpandShiftReturn" oor:op="fuse">
+      <oor:value>true</oor:value>
+    </oor:prop>
+    <oor:prop oor:name="DoNotAddLeading" oor:op="fuse">
+      <oor:value>true</oor:value>
+    </oor:prop>
+  </oor:item>
+
+  <!-- 既定単位やレイアウトの安定化（任意だが再現性向上に有効） -->
+  <oor:item oor:path="/org.openoffice.Office.Common/Misc">
+    <!-- 既定の計量単位：Word既定（cm）に合わせる -->
+    <oor:prop oor:name="MeasurementUnit" oor:op="fuse">
+      <oor:value>2</oor:value>
+    </oor:prop>
+  </oor:item>
+
+  <!-- 画面とPDFの差を減らす（印刷解像度への依存を抑制） -->
+  <oor:item oor:path="/org.openoffice.Office.Common/Print">
+    <oor:prop oor:name="PrinterIndependentLayout" oor:op="fuse">
+      <oor:value>true</oor:value>
+    </oor:prop>
+  </oor:item>
+
+</oor:items>

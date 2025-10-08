@@ -16,10 +16,17 @@ def _convert_with_docx2pdf(source: Path, destination: Path) -> None:
     docx2pdf_convert(str(source), str(destination))
 
 
+LIBREOFFICE_PROFILE_DIR = Path.home() / ".config/libreoffice/4/user"
+
+
 def _convert_with_libreoffice(source: Path, output_dir: Path) -> Path:
+    user_installation_arg = (
+        f"-env:UserInstallation={LIBREOFFICE_PROFILE_DIR.resolve().as_uri()}"
+    )
     command = [
         "soffice",
         "--headless",
+        user_installation_arg,
         "--convert-to",
         "pdf",
         "--outdir",
