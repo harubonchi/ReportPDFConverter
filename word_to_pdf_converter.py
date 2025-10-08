@@ -5,11 +5,11 @@ import os
 import jpype
 from jpype import JClass
 
-# === あなたのホストJDKを固定指定（例） ===
-JAVA_HOME = r"C:\Program Files\Java\jdk-18.0.2"
-
-# 正規の Aspose.Words for Java の JAR を同ディレクトリに置く
-ASPOSE_JAR_NAME = "aspose-words-20.12-jdk17-cracked.jar"
+# JVM/クラスパスのデフォルト値は環境変数で上書きできるようにし、
+# コンテナや Linux 環境でもそのまま動作するようにする。
+ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-20.12-jdk17-cracked.jar")
+# 任意で JVM の明示パスを指定したい場合は JVM_PATH を利用する。
+_ENV_JVM_PATH = os.environ.get("JVM_PATH")
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
 
 
@@ -25,13 +25,19 @@ def _get_aspose_jar() -> Path:
 
 
 def _jvm_path() -> str:
-    jvm = Path(JAVA_HOME, "bin", "server", "jvm.dll")
-    if not jvm.exists():
-        raise ConversionError(f"jvm.dll not found at {jvm}. Check JAVA_HOME.")
-    # プロセス内だけ JAVA_HOME/PATH を整える（念のため）
-    os.environ["JAVA_HOME"] = JAVA_HOME
-    os.environ["PATH"] = str(Path(JAVA_HOME, "bin")) + os.pathsep + os.environ.get("PATH", "")
-    return str(jvm)
+    """Resolve the JVM shared library path in a cross-platform manner."""
+    if _ENV_JVM_PATH:
+        jvm = Path(_ENV_JVM_PATH).expanduser().resolve()
+        if not jvm.exists():
+            raise ConversionError(f"Specified JVM_PATH does not exist: {jvm}")
+        return str(jvm)
+
+    try:
+        return jpype.getDefaultJVMPath()
+    except (jpype.JVMNotFoundException, OSError) as exc:  # pragma: no cover - depends on runtime
+        raise ConversionError(
+            "Unable to locate the JVM shared library. Set JAVA_HOME or JVM_PATH environment variables."
+        ) from exc
 
 
 def _start_jvm() -> None:
@@ -39,8 +45,8 @@ def _start_jvm() -> None:
         return
     jar_path = _get_aspose_jar()
     jvm_path = _jvm_path()
-    # 明示JVM + クラスパス
-    jpype.startJVM(jvm_path, f"-Djava.class.path={str(jar_path)}")
+    # 明示JVM + クラスパス。jpype.startJVM は同一プロセス内で一度だけ呼び出す。
+    jpype.startJVM(jvm_path, convertStrings=False, classpath=[str(jar_path)])
 
 
 def _java_diagnostics() -> None:
