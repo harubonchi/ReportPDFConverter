@@ -9,6 +9,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice \
         fonts-noto-cjk \
+        fonts-ipafont \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
