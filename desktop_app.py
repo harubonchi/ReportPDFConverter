@@ -113,46 +113,65 @@ class WelcomeView(BaseView):
     def __init__(self, master: tk.Widget, controller: "DesktopApp") -> None:
         super().__init__(master, controller)
         self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        title = ttk.Label(
-            self,
-            text="ロボ研報告書作成ツール",
-            font=("Helvetica", 24, "bold"),
-            foreground="#0b7285",
-        )
-        title.grid(row=0, column=0, pady=(24, 8))
+        wrapper = ttk.Frame(self, padding=24, style="WelcomeWrapper.TFrame")
+        wrapper.grid(row=0, column=0, sticky="nsew")
+        wrapper.columnconfigure(0, weight=1)
 
-        description = (
-            "Word形式の報告書が格納されたZIPファイルを選択してください。\n"
-            "PDFに変換・結合し、必要に応じてメール送信まで行います。"
+        ttk.Label(wrapper, text="ロボ研報告書作成ツール", style="Heading.TLabel").grid(
+            row=0, column=0, sticky="w"
         )
-        ttk.Label(self, text=description, justify="center").grid(
-            row=1, column=0, pady=(0, 24)
-        )
+
+        ttk.Label(
+            wrapper,
+            text=(
+                "Word形式の報告書をまとめたZIPファイルをアップロードしてください。\n"
+                "PDFに変換して結合します。"
+            ),
+            style="BodyText.TLabel",
+            justify="left",
+        ).grid(row=1, column=0, pady=(12, 16), sticky="w")
+
+        hint = ttk.Frame(wrapper, padding=(16, 12), style="Hint.TFrame")
+        hint.grid(row=2, column=0, sticky="ew")
+        ttk.Label(
+            hint,
+            text=(
+                "ZIP内にR班やN班などのフォルダーがある場合は班名として自動認識します。\n"
+                "サブフォルダーが無い場合はアップロードしたZIPファイル名を班名として表示します。"
+            ),
+            style="HintText.TLabel",
+            justify="left",
+        ).grid(row=0, column=0, sticky="w")
+
+        controls = ttk.Frame(wrapper, style="WelcomeWrapper.TFrame")
+        controls.grid(row=3, column=0, pady=(24, 0))
 
         self._selected_path = tk.StringVar(value="ファイルが選択されていません")
 
         select_button = ttk.Button(
-            self,
+            controls,
             text="ZIPファイルを選択",
             command=self._choose_file,
-            style="Accent.TButton",
+            style="AccentWide.TButton",
         )
-        select_button.grid(row=2, column=0, pady=12)
+        select_button.grid(row=0, column=0, padx=6)
 
         ttk.Label(
-            self,
+            controls,
             textvariable=self._selected_path,
-            foreground="#334155",
-        ).grid(row=3, column=0, pady=(4, 16))
+            style="Path.TLabel",
+        ).grid(row=1, column=0, pady=(8, 16))
 
         self._next_button = ttk.Button(
-            self,
+            controls,
             text="順番を編集",
             command=self._proceed,
             state=tk.DISABLED,
+            style="SecondaryWide.TButton",
         )
-        self._next_button.grid(row=4, column=0)
+        self._next_button.grid(row=2, column=0)
 
     def _choose_file(self) -> None:
         path = filedialog.askopenfilename(
@@ -184,90 +203,94 @@ class TeamBlockWidget(ttk.Frame):
         block: TeamBlock,
         index: int,
     ) -> None:
-        super().__init__(master, padding=12)
+        super().__init__(master, padding=16, style="TeamBlock.TFrame")
         self.controller = controller
         self.block = block
         self.index = index
-        self.configure(style="Card.TFrame")
 
-        header = ttk.Frame(self)
+        self.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(self, style="TeamHeader.TFrame")
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
 
-        title = ttk.Label(
-            header,
+        summary = ttk.Frame(header, style="TeamSummary.TFrame")
+        summary.grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            summary,
             text=f"{block.label}",
             style="TeamTitle.TLabel",
-        )
-        title.grid(row=0, column=0, sticky="w")
-
-        count_label = ttk.Label(
-            header,
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            summary,
             text=f"{len(block.entries)} 件",
             style="TeamCount.TLabel",
-        )
-        count_label.grid(row=0, column=1, padx=8)
+        ).grid(row=0, column=1, padx=(10, 0))
 
-        control_frame = ttk.Frame(header)
-        control_frame.grid(row=0, column=2, sticky="e")
+        control_frame = ttk.Frame(header, style="TeamActions.TFrame")
+        control_frame.grid(row=0, column=1, sticky="e")
         ttk.Button(
             control_frame,
             text="▲",
             width=3,
             command=lambda: controller.move_team(self.index, -1),
+            style="Secondary.TButton",
         ).grid(row=0, column=0, padx=2)
         ttk.Button(
             control_frame,
             text="▼",
             width=3,
             command=lambda: controller.move_team(self.index, 1),
+            style="Secondary.TButton",
         ).grid(row=0, column=1, padx=2)
 
-        list_frame = ttk.Frame(self)
-        list_frame.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
-        list_frame.columnconfigure(0, weight=1)
+        entries_container = ttk.Frame(self, style="DocumentList.TFrame")
+        entries_container.grid(row=1, column=0, sticky="ew", pady=(16, 0))
+        entries_container.columnconfigure(0, weight=1)
 
-        self.listbox = tk.Listbox(
-            list_frame,
-            exportselection=False,
-            height=max(4, len(block.entries)),
-            activestyle="none",
+        for entry_index, entry in enumerate(block.entries):
+            self._create_entry_row(entries_container, entry, entry_index)
+
+    def _create_entry_row(
+        self,
+        container: ttk.Frame,
+        entry: ZipEntry,
+        entry_index: int,
+    ) -> None:
+        row = ttk.Frame(container, padding=(12, 10), style="DocumentItem.TFrame")
+        row.grid(row=entry_index, column=0, sticky="ew", pady=(0, 10))
+        row.columnconfigure(0, weight=1)
+
+        info = ttk.Frame(row, style="DocumentInfo.TFrame")
+        info.grid(row=0, column=0, sticky="w")
+        ttk.Label(info, text=entry.display_name, style="DocTitle.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
         )
-        for entry in block.entries:
-            self.listbox.insert(tk.END, entry.display_name)
-        self.listbox.grid(row=0, column=0, sticky="nsew")
-        self.listbox.bind(
-            "<<ListboxSelect>>",
-            lambda event: controller.set_active_entry(self.index, self.selected_index),
-        )
 
-        entry_controls = ttk.Frame(list_frame)
-        entry_controls.grid(row=0, column=1, padx=(8, 0), sticky="ns")
-
+        actions = ttk.Frame(row, style="DocActions.TFrame")
+        actions.grid(row=0, column=1, sticky="e")
         ttk.Button(
-            entry_controls,
+            actions,
             text="▲",
             width=3,
-            command=lambda: controller.move_entry(self.index, self.selected_index, -1),
-        ).grid(row=0, column=0, pady=2)
+            style="Secondary.TButton",
+            command=lambda: self.controller.move_entry(self.index, entry_index, -1),
+        ).grid(row=0, column=0, padx=2)
         ttk.Button(
-            entry_controls,
+            actions,
             text="▼",
             width=3,
-            command=lambda: controller.move_entry(self.index, self.selected_index, 1),
-        ).grid(row=1, column=0, pady=2)
+            style="Secondary.TButton",
+            command=lambda: self.controller.move_entry(self.index, entry_index, 1),
+        ).grid(row=0, column=1, padx=2)
         ttk.Button(
-            entry_controls,
+            actions,
             text="削除",
-            command=lambda: controller.remove_entry(self.index, self.selected_index),
-        ).grid(row=2, column=0, pady=(8, 0))
-
-    @property
-    def selected_index(self) -> Optional[int]:
-        selection = self.listbox.curselection()
-        if not selection:
-            return None
-        return int(selection[0])
+            style="Danger.TButton",
+            command=lambda: self.controller.remove_entry(self.index, entry_index),
+        ).grid(row=0, column=2, padx=(8, 0))
 
 
 class OrderView(BaseView):
@@ -277,75 +300,64 @@ class OrderView(BaseView):
         super().__init__(master, controller)
 
         self.columnconfigure(0, weight=1)
-        self.rowconfigure(1, weight=1)
+        self.rowconfigure(0, weight=1)
 
-        title = ttk.Label(
-            self,
-            text="報告書の並び替え",
-            font=("Helvetica", 20, "bold"),
-            foreground="#0b7285",
-        )
-        title.grid(row=0, column=0, pady=(16, 8))
+        wrapper = ttk.Frame(self, padding=24, style="OrderWrapper.TFrame")
+        wrapper.grid(row=0, column=0, sticky="nsew")
+        wrapper.columnconfigure(0, weight=1)
+        wrapper.rowconfigure(2, weight=1)
 
-        instructions = (
-            "班単位で順番を並び替えたり、不要なファイルを削除したりできます。\n"
-            "デフォルト順の適用やリセットも可能です。"
-        )
-        ttk.Label(self, text=instructions, justify="center").grid(
-            row=1, column=0, pady=(0, 12)
-        )
-
-        self.scrollable = ScrollableFrame(self)
-        self.scrollable.grid(row=2, column=0, sticky="nsew")
-
-        footer = ttk.Frame(self, padding=(0, 12))
-        footer.grid(row=3, column=0, sticky="ew")
-        footer.columnconfigure(0, weight=1)
-
-        button_bar = ttk.Frame(footer)
-        button_bar.grid(row=0, column=0, sticky="w")
-
-        ttk.Button(
-            button_bar,
-            text="デフォルト順を適用",
-            command=controller.apply_default_order,
-        ).grid(row=0, column=0, padx=4)
-        ttk.Button(
-            button_bar,
-            text="デフォルト順を編集",
-            command=controller.open_default_order_editor,
-        ).grid(row=0, column=1, padx=4)
-        ttk.Button(
-            button_bar,
-            text="リセット",
-            command=controller.reset_order,
-        ).grid(row=0, column=2, padx=4)
-
-        form_frame = ttk.Frame(footer)
-        form_frame.grid(row=1, column=0, sticky="ew", pady=(12, 0))
-        form_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(form_frame, text="宛先メールアドレス (任意)").grid(
+        ttk.Label(wrapper, text="報告書の並び替え", style="Heading.TLabel").grid(
             row=0, column=0, sticky="w"
         )
-        self.email_entry = ttk.Entry(form_frame)
-        self.email_entry.grid(row=0, column=1, sticky="ew", padx=(12, 0))
-        if EMAIL_CONFIG.is_configured:
-            self.email_entry.insert(0, DEFAULT_RECIPIENT_EMAIL)
-        else:
-            self.email_entry.insert(0, "")
 
-        start_button = ttk.Button(
-            footer,
-            text="PDF変換を開始",
+        instructions = ttk.Frame(wrapper, padding=(16, 12), style="Instruction.TFrame")
+        instructions.grid(row=1, column=0, sticky="ew", pady=(16, 12))
+        ttk.Label(
+            instructions,
+            text=(
+                "上下ボタンで班単位・個人単位の並び替えができます。発表の順番に合わせて調整してください。\n"
+                "デフォルト順でソートされています。不要なファイルは「削除」で除外できます。"
+            ),
+            style="InstructionText.TLabel",
+            justify="left",
+            wraplength=640,
+        ).grid(row=0, column=0, sticky="w")
+
+        self.scrollable = ScrollableFrame(wrapper)
+        self.scrollable.grid(row=2, column=0, sticky="nsew")
+        self.scrollable.content.columnconfigure(0, weight=1)
+
+        controls = ttk.Frame(wrapper, style="Controls.TFrame")
+        controls.grid(row=3, column=0, pady=(18, 0))
+
+        ttk.Button(
+            controls,
+            text="ソート",
+            style="SecondaryWide.TButton",
+            command=controller.apply_default_order,
+        ).grid(row=0, column=0, padx=6)
+        ttk.Button(
+            controls,
+            text="デフォルト順を編集",
+            style="SecondaryWide.TButton",
+            command=controller.open_default_order_editor,
+        ).grid(row=0, column=1, padx=6)
+        ttk.Button(
+            controls,
+            text="最初の状態に戻す",
+            style="SecondaryWide.TButton",
+            command=controller.reset_order,
+        ).grid(row=0, column=2, padx=6)
+        ttk.Button(
+            controls,
+            text="PDF 変換を開始",
+            style="AccentWide.TButton",
             command=self._start_processing,
-            style="Accent.TButton",
-        )
-        start_button.grid(row=2, column=0, pady=(16, 0))
+        ).grid(row=0, column=3, padx=12)
 
     def on_show(self) -> None:
         self.refresh_blocks()
-        self.controller.set_active_entry(None, None)
 
     def refresh_blocks(self) -> None:
         for child in self.scrollable.content.winfo_children():
@@ -354,11 +366,16 @@ class OrderView(BaseView):
         for index, block in enumerate(blocks):
             widget = TeamBlockWidget(self.scrollable.content, self.controller, block, index)
             widget.grid(row=index, column=0, sticky="ew", pady=8, padx=12)
+        if not blocks:
+            ttk.Label(
+                self.scrollable.content,
+                text="対象のファイルがありません。",
+                style="Muted.TLabel",
+            ).grid(row=0, column=0, pady=24)
         self.scrollable.content.columnconfigure(0, weight=1)
 
     def _start_processing(self) -> None:
-        email = self.email_entry.get().strip()
-        self.controller.start_processing(email=email)
+        self.controller.start_processing()
 
 
 class StatusView(BaseView):
@@ -427,44 +444,6 @@ class StatusView(BaseView):
         )
         self.reveal_folder_button.grid(row=0, column=1)
 
-        email_section = ttk.LabelFrame(self, text="メールテンプレート")
-        email_section.grid(row=5, column=0, sticky="ew", padx=12, pady=(12, 0))
-        email_section.columnconfigure(1, weight=1)
-
-        ttk.Label(email_section, text="班").grid(row=0, column=0, sticky="w")
-        self.team_combo = ttk.Combobox(email_section, state="readonly")
-        self.team_combo.grid(row=0, column=1, sticky="ew", padx=(12, 0))
-
-        ttk.Label(email_section, text="学年").grid(row=0, column=2, padx=(12, 0))
-        self.grade_combo = ttk.Combobox(
-            email_section,
-            values=["", "B3", "B4", "M1", "M2"],
-            state="readonly",
-        )
-        self.grade_combo.grid(row=0, column=3, padx=(12, 0))
-        self.grade_combo.current(0)
-
-        ttk.Label(email_section, text="名前").grid(row=0, column=4, padx=(12, 0))
-        self.name_entry = ttk.Entry(email_section, width=16)
-        self.name_entry.grid(row=0, column=5, padx=(12, 0))
-
-        self.email_text = tk.Text(email_section, height=6, wrap="word")
-        self.email_text.grid(row=1, column=0, columnspan=6, pady=(12, 0), sticky="nsew")
-        email_section.rowconfigure(1, weight=1)
-
-        self.copy_button = ttk.Button(
-            email_section,
-            text="テンプレートをコピー",
-            command=self._copy_template,
-            state=tk.DISABLED,
-        )
-        self.copy_button.grid(row=2, column=0, columnspan=6, pady=(12, 0), sticky="e")
-        self.copy_button.state(["disabled"])
-
-        for widget in (self.team_combo, self.grade_combo, self.name_entry):
-            widget.bind("<<ComboboxSelected>>", lambda event: self._update_template())
-        self.name_entry.bind("<KeyRelease>", lambda event: self._update_template())
-
         self._pdf_path: Optional[Path] = None
         self._report_number: str = ""
 
@@ -488,39 +467,27 @@ class StatusView(BaseView):
             self.progress.config(value=0)
             self.progress_text.config(text="")
 
-    def show_completion(
-        self,
-        pdf_path: Path,
-        report_number: str,
-        team_options: Iterable[str],
-        email_status: str,
-    ) -> None:
+    def show_completion(self, pdf_path: Path, report_number: str) -> None:
         self._pdf_path = pdf_path
         self._report_number = report_number
         self.status_label.config(text="完了")
-        self.message_label.config(text=self._format_email_status(email_status))
+        if report_number:
+            self.message_label.config(
+                text=f"第{report_number}回報告書のPDFを生成しました。"
+            )
+        else:
+            self.message_label.config(text="PDFの結合が完了しました。")
         self.progress.config(value=100)
         self.progress_text.config(text="処理が完了しました。")
         self.pdf_path_var.set(f"生成されたPDF: {pdf_path}")
         self.open_pdf_button.state(["!disabled"])
         self.reveal_folder_button.state(["!disabled"])
-        teams = sorted({option.strip() for option in team_options if option})
-        self.team_combo["values"] = [""] + teams
-        self.team_combo.set("")
-        self.grade_combo.set("")
-        self.name_entry.delete(0, tk.END)
-        self._update_template()
-        if pdf_path.exists():
-            self.copy_button.state(["!disabled"])
-        else:
-            self.copy_button.state(["disabled"])
 
     def show_failure(self, message: str) -> None:
         self.status_label.config(text="失敗")
         self.message_label.config(text=message)
         self.progress_text.config(text="エラーが発生しました。")
         self.progress.config(value=0)
-        self.copy_button.state(["disabled"])
         self.open_pdf_button.state(["disabled"])
         self.reveal_folder_button.state(["disabled"])
 
@@ -532,62 +499,6 @@ class StatusView(BaseView):
             "failed": "失敗",
         }
         return mapping.get(status, status)
-
-    def _format_email_status(self, status: str) -> str:
-        normalized = status.strip().lower()
-        if not normalized:
-            return "PDFの結合が完了しました。"
-        if normalized == "sent":
-            return "PDFを添付したメールを送信しました。"
-        if normalized == "sending":
-            return "メールを送信中です。"
-        return "メール送信に失敗しました。"
-
-    def _copy_template(self) -> None:
-        text = self.email_text.get("1.0", tk.END).strip()
-        if not text:
-            return
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        messagebox.showinfo("コピー", "テンプレートをクリップボードにコピーしました。")
-
-    def clipboard_clear(self) -> None:  # pragma: no cover - delegates to Tk
-        self.controller.root.clipboard_clear()
-
-    def clipboard_append(self, text: str) -> None:  # pragma: no cover
-        self.controller.root.clipboard_append(text)
-
-    def _update_template(self) -> None:
-        if not self._report_number:
-            self.email_text.delete("1.0", tk.END)
-            return
-        team_label = self.team_combo.get().strip()
-        grade_label = self.grade_combo.get().strip()
-        name_label = self.name_entry.get().strip()
-
-        formatted_team = self._format_team_label(team_label)
-        grade_placeholder = grade_label or "(学年)"
-        name_placeholder = name_label or "(名前)"
-        if grade_label:
-            separator = "" if team_label else " "
-        else:
-            separator = " "
-        grade_suffix = "の" if name_label else " の "
-        message = (
-            f"お世話になっております。{formatted_team}{separator}{grade_placeholder}"
-            f"{grade_suffix}{name_placeholder}です。\n第{self._report_number}回報告書を添付しております。\n"
-            "よろしくお願いいたします。"
-        )
-        self.email_text.delete("1.0", tk.END)
-        self.email_text.insert("1.0", message)
-
-    def _format_team_label(self, value: str) -> str:
-        if not value:
-            return "◯◯班"
-        trimmed = value.strip()
-        if trimmed == "班なし":
-            return trimmed
-        return trimmed if trimmed.endswith("班") else f"{trimmed}班"
 
 
 class DefaultOrderEditor(tk.Toplevel):
@@ -779,7 +690,6 @@ class DesktopApp:
         self.entry_map: Dict[str, ZipEntry] = {}
         self.team_blocks: List[TeamBlock] = []
         self.initial_layout_snapshot: List[Dict[str, object]] = []
-        self.team_options: List[str] = []
 
         self._preferences_cache = order_manager.load_preferences()
 
@@ -794,15 +704,76 @@ class DesktopApp:
             style.theme_use("clam")
         except tk.TclError:  # pragma: no cover - depends on platform
             pass
-        style.configure("Accent.TButton", foreground="#ffffff", background="#0b7285")
-        style.configure("Card.TFrame", background="#f8fafc", relief="groove")
-        style.configure("TeamTitle.TLabel", font=("Helvetica", 14, "bold"))
+        style.configure(
+            "Accent.TButton",
+            foreground="#ffffff",
+            background="#0b7285",
+            padding=(8, 6),
+        )
+        style.map("Accent.TButton", background=[("active", "#0c8599")])
+        style.configure(
+            "AccentWide.TButton",
+            foreground="#ffffff",
+            background="#0b7285",
+            padding=(10, 8),
+        )
+        style.map("AccentWide.TButton", background=[("active", "#0c8599")])
+        style.configure(
+            "Secondary.TButton",
+            foreground="#ffffff",
+            background="#495057",
+            padding=(6, 4),
+        )
+        style.map("Secondary.TButton", background=[("active", "#343a40")])
+        style.configure(
+            "SecondaryWide.TButton",
+            foreground="#ffffff",
+            background="#495057",
+            padding=(10, 8),
+        )
+        style.map("SecondaryWide.TButton", background=[("active", "#343a40")])
+        style.configure(
+            "Danger.TButton",
+            foreground="#ffffff",
+            background="#fa5252",
+            padding=(6, 4),
+        )
+        style.map("Danger.TButton", background=[("active", "#e03131")])
+
+        style.configure("WelcomeWrapper.TFrame", background="#f8fafc")
+        style.configure("OrderWrapper.TFrame", background="#f8fafc")
+        style.configure("Controls.TFrame", background="#f8fafc")
+        style.configure("Instruction.TFrame", background="#e7f5ff", borderwidth=0)
+        style.configure("InstructionText.TLabel", background="#e7f5ff", foreground="#1f2937")
+        style.configure("BodyText.TLabel", background="#f8fafc", foreground="#1f2933")
+        style.configure("Hint.TFrame", background="#e7f5ff", borderwidth=0)
+        style.configure("HintText.TLabel", background="#e7f5ff", foreground="#0b7285")
+        style.configure("Path.TLabel", background="#f8fafc", foreground="#334155")
+        style.configure("Heading.TLabel", font=("Helvetica", 20, "bold"), foreground="#0b7285")
+        style.configure("Muted.TLabel", foreground="#64748b")
+        style.configure("Card.TFrame", background="#f8fafc", relief="groove", borderwidth=1)
+
+        style.configure("TeamBlock.TFrame", background="#ffffff", relief="ridge", borderwidth=1)
+        style.configure("TeamHeader.TFrame", background="#ffffff")
+        style.configure("TeamSummary.TFrame", background="#ffffff")
+        style.configure("TeamActions.TFrame", background="#ffffff")
+        style.configure("TeamTitle.TLabel", font=("Helvetica", 14, "bold"), foreground="#0b7285", background="#ffffff")
         style.configure(
             "TeamCount.TLabel",
             background="#0b7285",
             foreground="#ffffff",
             padding=(8, 2),
         )
+        style.configure("DocumentList.TFrame", background="#ffffff")
+        style.configure(
+            "DocumentItem.TFrame",
+            background="#fdfdfd",
+            relief="solid",
+            borderwidth=1,
+        )
+        style.configure("DocumentInfo.TFrame", background="#fdfdfd")
+        style.configure("DocActions.TFrame", background="#fdfdfd")
+        style.configure("DocTitle.TLabel", background="#fdfdfd", font=("Helvetica", 11, "bold"))
 
     def show_view(self, name: str) -> None:
         if name not in self.views:
@@ -850,16 +821,9 @@ class DesktopApp:
 
         self.team_blocks = blocks
         self.initial_layout_snapshot = initial_snapshot
-        self.team_options = [block.label for block in blocks]
         self._preferences_cache = order_manager.load_preferences()
 
         self.show_view("order")
-
-    def set_active_entry(
-        self, team_index: Optional[int], entry_index: Optional[int]
-    ) -> None:
-        self._active_team_index = team_index
-        self._active_entry_index = entry_index
 
     def move_team(self, index: int, offset: int) -> None:
         if index is None:
@@ -965,7 +929,7 @@ class DesktopApp:
             append_team(UNGROUPED_TEAM_KEY)
         return teams
 
-    def start_processing(self, email: str) -> None:
+    def start_processing(self) -> None:
         if not self.team_blocks:
             messagebox.showwarning("警告", "処理するファイルがありません。")
             return
@@ -978,7 +942,6 @@ class DesktopApp:
             messagebox.showwarning("警告", "処理対象が空です。")
             return
 
-        self.team_options = [block.label for block in self.team_blocks if block.entries]
         order_manager.save(order, self.entry_map)
 
         job_id = uuid.uuid4().hex
@@ -1002,7 +965,7 @@ class DesktopApp:
         original_name = self.zip_original_name or self.selected_zip.name
         self._processing_thread = threading.Thread(
             target=self._run_processing,
-            args=(job_id, temp_zip, order, email, original_name),
+            args=(job_id, temp_zip, order, original_name),
             daemon=True,
         )
         self._processing_thread.start()
@@ -1013,7 +976,6 @@ class DesktopApp:
         job_id: str,
         zip_path: Path,
         order: List[str],
-        email: str,
         zip_original_name: str,
     ) -> None:
         work_root = WORK_DIR / job_id
@@ -1089,38 +1051,21 @@ class DesktopApp:
             )
             merge_pdfs(pdf_paths, merged_path)
 
-            email_status = ""
-            email = email.strip()
-            if EMAIL_CONFIG.is_configured and email:
-                self.status_queue.put(
-                    {
-                        "type": "status",
-                        "status": "running",
-                        "message": "メールを送信しています…",
-                        "progress_current": len(order),
-                        "progress_total": len(order),
-                    }
-                )
+            recipient_email = ""
+            if EMAIL_CONFIG.is_configured:
+                recipient_email = DEFAULT_RECIPIENT_EMAIL.strip()
+            if recipient_email:
                 try:
                     send_email_with_attachment(
                         config=EMAIL_CONFIG,
-                        recipient=email,
+                        recipient=recipient_email,
                         subject=f"第{report_number}回報告書",
                         body="",
                         attachment_path=merged_path,
                     )
-                    email_status = "sent"
-                except Exception as exc:  # noqa: BLE001
-                    email_status = "failed"
-                    self.status_queue.put(
-                        {
-                            "type": "status",
-                            "status": "running",
-                            "message": f"メール送信に失敗しました: {exc}",
-                            "progress_current": len(order),
-                            "progress_total": len(order),
-                        }
-                    )
+                except Exception:
+                    # Email delivery is best-effort for the desktop client.
+                    pass
 
             self.status_queue.put(
                 {
@@ -1132,8 +1077,6 @@ class DesktopApp:
                     "progress_percent": 100,
                     "pdf_path": str(merged_path),
                     "report_number": report_number,
-                    "team_options": self.team_options,
-                    "email_status": email_status,
                 }
             )
         except ConversionError as exc:
@@ -1171,8 +1114,6 @@ class DesktopApp:
                     view.show_completion(
                         Path(str(payload.get("pdf_path"))),
                         str(payload.get("report_number", "")),
-                        payload.get("team_options", []),
-                        str(payload.get("email_status", "")),
                     )
                 elif payload["type"] == "failed":
                     view.show_failure(str(payload.get("message", "")))
