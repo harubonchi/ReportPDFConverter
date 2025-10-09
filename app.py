@@ -842,7 +842,7 @@ def _process_job(job_id: str) -> None:
                 else:
                     _update_job(
                         job_id,
-                        message="PDFの送信が完了しました。",
+                        message="PDFの結合が完了しました。",
                         email_delivery_status="sent",
                     )
                 finally:
