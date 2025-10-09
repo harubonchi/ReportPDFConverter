@@ -1,28 +1,15 @@
 from __future__ import annotations
 
-import os
-import shlex
-import tempfile
 from pathlib import Path
-from tempfile import TemporaryDirectory
-
+import os
 import jpype
-from jpype import JClass, JException
-
-from docx_image_preprocessor import preprocess_docx_images
+from jpype import JClass
 
 # JVM/クラスパスのデフォルト値は環境変数で上書きできるようにし、
 # コンテナや Linux 環境でもそのまま動作するようにする。
-ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-20.12-jdk17.jar")
+ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-22.12-jdk17-unlocked.jar")
 # 任意で JVM の明示パスを指定したい場合は JVM_PATH を利用する。
 _ENV_JVM_PATH = os.environ.get("JVM_PATH")
-_ENV_JVM_MIN_HEAP = os.environ.get("JVM_MIN_HEAP") or os.environ.get("JVM_MIN_HEAP_MB")
-_ENV_JVM_MAX_HEAP = os.environ.get("JVM_MAX_HEAP") or os.environ.get("JVM_MAX_HEAP_MB")
-_ENV_JVM_OPTIONS = os.environ.get("JVM_OPTIONS")
-_DEFAULT_MIN_HEAP = "256m"
-_DEFAULT_MAX_HEAP = "2048m"
-_DEFAULT_TEMP_DIR = Path(tempfile.gettempdir()) / "aspose-words-cache"
-ASPOSE_TEMP_DIR = Path(os.environ.get("ASPOSE_TEMP_DIR", str(_DEFAULT_TEMP_DIR)))
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
 
 
@@ -59,47 +46,7 @@ def _start_jvm() -> None:
     jar_path = _get_aspose_jar()
     jvm_path = _jvm_path()
     # 明示JVM + クラスパス。jpype.startJVM は同一プロセス内で一度だけ呼び出す。
-    heap_args = _resolve_heap_arguments()
-    extra_args = shlex.split(_ENV_JVM_OPTIONS) if _ENV_JVM_OPTIONS else []
-    jpype.startJVM(
-        jvm_path,
-        *heap_args,
-        *extra_args,
-        convertStrings=False,
-        classpath=[str(jar_path)],
-    )
-
-
-def _normalize_heap_size(value: str) -> str:
-    candidate = value.strip()
-    if not candidate:
-        raise ValueError("Empty heap size")
-    lowered = candidate.lower()
-    if lowered.endswith(("kb", "mb", "gb")):
-        return candidate
-    if lowered[-1] in {"k", "m", "g"}:
-        return candidate
-    if lowered[-1].isdigit():
-        return f"{candidate}m"
-    return candidate
-
-
-def _resolve_heap_arguments() -> list[str]:
-    args: list[str] = []
-
-    def _heap_arg(prefix: str, value: str | None, default: str | None) -> None:
-        candidate = value if value is not None else default
-        if not candidate:
-            return
-        try:
-            normalized = _normalize_heap_size(candidate)
-        except ValueError:
-            return
-        args.append(f"{prefix}{normalized}")
-
-    _heap_arg("-Xms", _ENV_JVM_MIN_HEAP, _DEFAULT_MIN_HEAP)
-    _heap_arg("-Xmx", _ENV_JVM_MAX_HEAP, _DEFAULT_MAX_HEAP)
-    return args
+    jpype.startJVM(jvm_path, convertStrings=False, classpath=[str(jar_path)])
 
 
 def _java_diagnostics() -> None:
@@ -122,64 +69,8 @@ def _java_diagnostics() -> None:
 def _convert_with_aspose(source: Path, destination: Path) -> None:
     _start_jvm()
     Document = JClass("com.aspose.words.Document")
-    LoadOptions = JClass("com.aspose.words.LoadOptions")
-    FileCorruptedException = JClass("com.aspose.words.FileCorruptedException")
-    try:
-        MemorySettings = JClass("com.aspose.words.MemorySettings")
-        MemorySetting = JClass("com.aspose.words.MemorySetting")
-    except (TypeError, RuntimeError):  # pragma: no cover - depends on Aspose version
-        MemorySettings = None
-        MemorySetting = None
-
-    try:
-        PdfSaveOptions = JClass("com.aspose.words.PdfSaveOptions")
-    except (TypeError, RuntimeError):  # pragma: no cover - depends on Aspose version
-        PdfSaveOptions = None
-
-    temp_dir = ASPOSE_TEMP_DIR.expanduser()
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_dir = temp_dir.resolve()
-
-    if MemorySettings:
-        try:
-            MemorySettings.setTempFolder(str(temp_dir))
-        except (AttributeError, TypeError):  # pragma: no cover - defensive
-            pass
-
-    load_options = LoadOptions()
-    load_options.setTempFolder(str(temp_dir))
-    try:
-        load_options.setUpdateDirtyFields(False)
-    except AttributeError:  # pragma: no cover - depends on Aspose version
-        pass
-
-    if MemorySettings and MemorySetting:
-        try:
-            MemorySettings.setMemorySetting(MemorySetting.MEMORY_PREFERENCE)
-        except (AttributeError, TypeError):  # pragma: no cover - defensive
-            pass
-
-    pdf_save_options = None
-    if PdfSaveOptions:
-        try:
-            pdf_save_options = PdfSaveOptions()
-            pdf_save_options.setTempFolder(str(temp_dir))
-        except (AttributeError, TypeError):  # pragma: no cover - defensive
-            pdf_save_options = None
-
-    try:
-        document = Document(str(source), load_options)
-        if pdf_save_options is not None:
-            document.save(str(destination), pdf_save_options)
-        else:
-            document.save(str(destination))
-    except JException as exc:
-        if isinstance(exc, FileCorruptedException):
-            raise ConversionError(
-                "Aspose.Words reported that the document is corrupted. "
-                "Large or complex files may require additional JVM heap space."
-            ) from exc
-        raise
+    document = Document(str(source))
+    document.save(str(destination))
 
 
 def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
@@ -188,28 +79,12 @@ def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
         raise ConversionError(f"Unsupported file type: {source.suffix}")
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{source.stem}.pdf"
-    working_source = source
-    temp_docx: TemporaryDirectory | None = None
-    if source.suffix.lower() == ".docx":
-        temp_docx = TemporaryDirectory(prefix="optimized_docx_")
-        optimized_path = Path(temp_docx.name) / source.name
-        optimized_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            preprocess_docx_images(source, optimized_path)
-            working_source = optimized_path
-        except Exception:
-            temp_docx.cleanup()
-            temp_docx = None
-            working_source = source
     try:
-        _convert_with_aspose(working_source, output_path)
+        _convert_with_aspose(source, output_path)
     except ConversionError:
         raise
     except Exception as exc:  # noqa: BLE001
         raise ConversionError(f"Failed to convert {source.name} to PDF: {exc}") from exc
-    finally:
-        if temp_docx is not None:
-            temp_docx.cleanup()
     if not output_path.exists():
         raise ConversionError(f"Conversion completed but {output_path} was not created.")
     return output_path
