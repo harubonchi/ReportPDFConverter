@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 import shutil
 import threading
-import time
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -51,13 +49,6 @@ ORDER_FILE = DATA_DIR / "order.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
-
-
-PREPARATION_SECONDS = 0.1
-CONVERSION_SECONDS_PER_FILE = 0.5
-MERGE_SECONDS_PER_FILE = 0.1
-EMAIL_SECONDS_PER_5MB = 25
-BYTES_PER_MEGABYTE = 1024 * 1024
 
 
 def _cleanup_data_directories() -> None:
@@ -106,7 +97,6 @@ class ZipEntry:
     team_name: str | None = None
     persons: List[str] | None = None
     sanitized_name: str | None = None
-    file_size: int = 0
 
 
 UNGROUPED_TEAM_KEY = "__ungrouped__"
@@ -388,8 +378,8 @@ class JobState:
     processing_started_at: datetime | None = None
     processing_completed_at: datetime | None = None
     report_number: str | None = None
-    progress_current: float = 0.0
-    progress_total: float = 0.0
+    progress_current: int = 0
+    progress_total: int = 0
 
     def to_dict(self) -> Dict[str, object]:
         elapsed_seconds: float | None = None
@@ -677,7 +667,6 @@ def _extract_entries(zip_path: Path, *, original_name: str | None = None) -> Lis
                 team_name=team_name,
                 persons=persons,
                 sanitized_name=sanitized_name,
-                file_size=info.file_size,
             )
         )
 
@@ -722,6 +711,7 @@ def _create_job_state(
         zip_original_name=zip_original_name,
         entries=entry_map,
         team_options=team_options,
+        progress_total=len(order) + 3 if order else 0,
     )
 
 
@@ -731,8 +721,8 @@ def _update_job(
     status: str | None = None,
     message: str | None = None,
     merged_pdf: Path | None = None,
-    progress_increment: float | None = None,
-    progress_total: float | None = None,
+    progress_increment: int | None = None,
+    progress_total: int | None = None,
 ) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -750,80 +740,18 @@ def _update_job(
         if merged_pdf:
             job.merged_pdf = merged_pdf
         if progress_total is not None:
-            total_value = max(float(progress_total), 0.0)
-            job.progress_total = total_value
+            job.progress_total = max(progress_total, 0)
             if job.progress_total == 0:
-                job.progress_current = 0.0
+                job.progress_current = 0
             elif job.progress_current > job.progress_total:
                 job.progress_current = job.progress_total
-        if progress_increment is not None:
-            increment_value = float(progress_increment)
-            if increment_value > 0:
-                job.progress_current += increment_value
-                if job.progress_total > 0:
-                    job.progress_current = min(job.progress_current, job.progress_total)
+        if progress_increment:
+            job.progress_current += progress_increment
+            if job.progress_total > 0:
+                job.progress_current = min(job.progress_current, job.progress_total)
         if status == "completed" and job.progress_total > 0:
             job.progress_current = job.progress_total
         job.updated_at = now
-
-
-def _estimate_email_seconds(file_size_bytes: int) -> int:
-    if file_size_bytes <= 0:
-        return 1
-    estimated = math.ceil(
-        file_size_bytes * EMAIL_SECONDS_PER_5MB / (5 * BYTES_PER_MEGABYTE)
-    )
-    return max(1, estimated)
-
-
-class _JobProgressMonitor:
-    def __init__(self, job_id: str, estimated_seconds: float) -> None:
-        self.job_id = job_id
-        self.estimated_seconds = max(float(estimated_seconds), 0.0)
-        self._emitted = 0.0
-        self._progress_cap = self.estimated_seconds * 0.99
-        self._stop_event = threading.Event()
-        self._thread: threading.Thread | None = None
-        self._start_time: float | None = None
-        self._min_increment = 0.001
-
-    def start(self) -> None:
-        if self.estimated_seconds <= 0:
-            return
-        self._start_time = time.monotonic()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def finish(self, success: bool) -> None:
-        if self.estimated_seconds <= 0:
-            return
-        self._stop_event.set()
-        if self._thread and self._thread.is_alive():
-            self._thread.join()
-        if self._start_time is not None:
-            self._emit(min(time.monotonic() - self._start_time, self._progress_cap))
-        if success:
-            remaining = self.estimated_seconds - self._emitted
-            if remaining > self._min_increment:
-                _update_job(self.job_id, progress_increment=remaining)
-                self._emitted += remaining
-
-    def _run(self) -> None:
-        if self._start_time is None:
-            return
-        while not self._stop_event.is_set():
-            elapsed = time.monotonic() - self._start_time
-            target = min(elapsed, self._progress_cap)
-            self._emit(target)
-            if self._stop_event.wait(0.1):
-                break
-
-    def _emit(self, target: float) -> None:
-        delta = target - self._emitted
-        if delta <= self._min_increment:
-            return
-        _update_job(self.job_id, progress_increment=delta)
-        self._emitted += delta
 
 
 def _process_job(job_id: str) -> None:
@@ -831,9 +759,6 @@ def _process_job(job_id: str) -> None:
         job = jobs.get(job_id)
     if not job:
         return
-
-    progress_monitor: _JobProgressMonitor | None = None
-    processing_success = False
 
     try:
         _update_job(job_id, status="running", message="ZIPファイルを展開しています…")
@@ -857,29 +782,13 @@ def _process_job(job_id: str) -> None:
         if not ordered_entries:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
-        num_entries = len(ordered_entries)
-        merge_seconds_estimate = max(1, num_entries * MERGE_SECONDS_PER_FILE)
-        conversion_seconds_estimate = num_entries * CONVERSION_SECONDS_PER_FILE
-        #total_word_bytes = sum(max(entry.file_size, 0) for entry in ordered_entries)
-        #estimated_pdf_bytes = int(total_word_bytes * 0.5)
-        #email_seconds_estimate = _estimate_email_seconds(estimated_pdf_bytes)
-        email_seconds_estimate = conversion_seconds_estimate * 5
-        estimated_total_seconds = (
-            PREPARATION_SECONDS
-            + conversion_seconds_estimate
-            + merge_seconds_estimate
-            + email_seconds_estimate
+        total_steps = len(ordered_entries) + 3
+        _update_job(
+            job_id,
+            progress_total=total_steps,
+            progress_increment=1,
+            message="PDF変換の準備をしています…",
         )
-        if estimated_total_seconds > 0:
-            _update_job(
-                job_id,
-                progress_total=estimated_total_seconds,
-                message="PDF変換の準備をしています…",
-            )
-            progress_monitor = _JobProgressMonitor(job_id, estimated_total_seconds)
-            progress_monitor.start()
-        else:
-            _update_job(job_id, message="PDF変換の準備をしています…")
 
         report_number = _determine_report_number(job.zip_original_name, ordered_entries)
         job.report_number = report_number
@@ -892,15 +801,15 @@ def _process_job(job_id: str) -> None:
                 raise FileNotFoundError(f"展開後のファイルが見つかりません: {entry.archive_name}")
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
             pdf_paths.append(pdf_path)
+            _update_job(job_id, progress_increment=1)
 
         merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
-
         merge_pdfs(pdf_paths, merged_path)
+        _update_job(job_id, progress_increment=1)
 
         if EMAIL_CONFIG.is_configured:
             _update_job(job_id, message="結合したPDFをメールで送信しています…")
-
             send_email_with_attachment(
                 config=EMAIL_CONFIG,
                 recipient=job.email,
@@ -908,9 +817,9 @@ def _process_job(job_id: str) -> None:
                 body="",
                 attachment_path=merged_path,
             )
+            _update_job(job_id, progress_increment=1)
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
-        processing_success = True
         _update_job(
             job_id,
             status="completed",
@@ -921,8 +830,6 @@ def _process_job(job_id: str) -> None:
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
     finally:
-        if progress_monitor:
-            progress_monitor.finish(processing_success)
         job.zip_path.unlink(missing_ok=True)
 
 
