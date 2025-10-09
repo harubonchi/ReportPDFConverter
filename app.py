@@ -813,17 +813,18 @@ def _process_job(job_id: str) -> None:
         _update_job(job_id, message="PDFファイルを結合しています…")
         merge_pdfs(pdf_paths, merged_path)
 
-        if EMAIL_CONFIG.is_configured:
-            _update_job(
-                job_id,
-                status="completed",
-                message="PDFの結合が完了しました。",
-                merged_pdf=merged_path,
-                email_delivery_status="sending",
-            )
+        recipient_email = (job.email or "").strip()
+        should_send_email = EMAIL_CONFIG.is_configured and bool(recipient_email)
 
-            recipient_email = job.email
+        _update_job(
+            job_id,
+            status="completed",
+            message="PDFの結合が完了しました。",
+            merged_pdf=merged_path,
+            email_delivery_status="sending" if should_send_email else "",
+        )
 
+        if should_send_email:
             def _background_email_sender() -> None:
                 try:
                     send_email_with_attachment(
@@ -833,25 +834,18 @@ def _process_job(job_id: str) -> None:
                         body="",
                         attachment_path=merged_path,
                     )
-                except Exception as email_exc:  # noqa: BLE001
-                    _update_job(
-                        job_id,
-                        message=f"メール送信でエラーが発生しました: {email_exc}",
-                        email_delivery_status="failed",
-                    )
+                except Exception:  # noqa: BLE001
+                    app.logger.exception("Failed to send email for job %s", job_id)
+                    _update_job(job_id, email_delivery_status="")
                 else:
-                    _update_job(
-                        job_id,
-                        message="PDFの結合が完了しました。",
-                        email_delivery_status="sent",
-                    )
+                    _update_job(job_id, email_delivery_status="sent")
                 finally:
                     _schedule_delayed_cleanup()
 
             email_thread = threading.Thread(target=_background_email_sender, daemon=True)
             email_thread.start()
         else:
-            raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
+            _schedule_delayed_cleanup()
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
     finally:
