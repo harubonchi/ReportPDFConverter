@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import platform
 import jpype
 from jpype import JClass
 
@@ -11,6 +12,7 @@ ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-22.12-jdk17-un
 # 任意で JVM の明示パスを指定したい場合は JVM_PATH を利用する。
 _ENV_JVM_PATH = os.environ.get("JVM_PATH")
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
+_IS_WINDOWS = platform.system().lower() == "windows"
 
 
 class ConversionError(RuntimeError):
@@ -73,6 +75,40 @@ def _convert_with_aspose(source: Path, destination: Path) -> None:
     document.save(str(destination))
 
 
+def _convert_with_win32com(source: Path, destination: Path) -> None:  # pragma: no cover - requires Windows
+    try:
+        import win32com.client  # type: ignore
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise ConversionError("pywin32 is required for Word to PDF conversion on Windows.") from exc
+
+    word = win32com.client.Dispatch("Word.Application")
+    word.Visible = False
+    doc = None
+    try:
+        doc = word.Documents.Open(str(source), ReadOnly=True)
+        doc.ExportAsFixedFormat(
+            OutputFileName=str(destination),
+            ExportFormat=17,
+            OpenAfterExport=False,
+            OptimizeFor=0,
+            Range=0,
+            Item=0,
+            IncludeDocProps=True,
+            KeepIRM=True,
+            CreateBookmarks=1,
+            DocStructureTags=True,
+            BitmapMissingFonts=True,
+            UseISO19005_1=False,
+        )
+    finally:
+        if doc is not None:
+            try:
+                doc.Close(False)
+            except Exception:  # pragma: no cover - depends on Word COM behaviour
+                pass
+        word.Quit()
+
+
 def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
     """Convert a Word document to PDF using Aspose.Words."""
     if source.suffix.lower() not in SUPPORTED_EXTENSIONS:
@@ -80,7 +116,10 @@ def convert_word_to_pdf(source: Path, output_dir: Path) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{source.stem}.pdf"
     try:
-        _convert_with_aspose(source, output_path)
+        if _IS_WINDOWS:
+            _convert_with_win32com(source, output_path)
+        else:
+            _convert_with_aspose(source, output_path)
     except ConversionError:
         raise
     except Exception as exc:  # noqa: BLE001
