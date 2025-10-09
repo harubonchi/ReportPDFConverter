@@ -380,6 +380,7 @@ class JobState:
     report_number: str | None = None
     progress_current: int = 0
     progress_total: int = 0
+    email_delivery_status: str = "pending"
 
     def to_dict(self) -> Dict[str, object]:
         elapsed_seconds: float | None = None
@@ -410,6 +411,7 @@ class JobState:
             "progress_current": self.progress_current,
             "progress_total": self.progress_total,
             "progress_percent": progress_percent,
+            "email_delivery_status": self.email_delivery_status,
         }
 
 
@@ -711,7 +713,7 @@ def _create_job_state(
         zip_original_name=zip_original_name,
         entries=entry_map,
         team_options=team_options,
-        progress_total=len(order) + 3 if order else 0,
+        progress_total=len(order) if order else 0,
     )
 
 
@@ -723,6 +725,7 @@ def _update_job(
     merged_pdf: Path | None = None,
     progress_increment: int | None = None,
     progress_total: int | None = None,
+    email_delivery_status: str | None = None,
 ) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -745,6 +748,8 @@ def _update_job(
                 job.progress_current = 0
             elif job.progress_current > job.progress_total:
                 job.progress_current = job.progress_total
+        if email_delivery_status is not None:
+            job.email_delivery_status = email_delivery_status
         if progress_increment:
             job.progress_current += progress_increment
             if job.progress_total > 0:
@@ -782,11 +787,10 @@ def _process_job(job_id: str) -> None:
         if not ordered_entries:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
-        total_steps = len(ordered_entries) + 3
+        total_steps = len(ordered_entries)
         _update_job(
             job_id,
             progress_total=total_steps,
-            progress_increment=1,
             message="PDF変換の準備をしています…",
         )
 
@@ -806,27 +810,46 @@ def _process_job(job_id: str) -> None:
         merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
         merge_pdfs(pdf_paths, merged_path)
-        _update_job(job_id, progress_increment=1)
 
         if EMAIL_CONFIG.is_configured:
-            _update_job(job_id, message="結合したPDFをメールで送信しています…")
-            send_email_with_attachment(
-                config=EMAIL_CONFIG,
-                recipient=job.email,
-                subject=f"第{report_number}回報告書",
-                body="",
-                attachment_path=merged_path,
+            _update_job(
+                job_id,
+                status="completed",
+                message="PDFの結合が完了しました。メール送信をバックグラウンドで実行しています…",
+                merged_pdf=merged_path,
+                email_delivery_status="sending",
             )
-            _update_job(job_id, progress_increment=1)
+
+            recipient_email = job.email
+
+            def _background_email_sender() -> None:
+                try:
+                    send_email_with_attachment(
+                        config=EMAIL_CONFIG,
+                        recipient=recipient_email,
+                        subject=f"第{report_number}回報告書",
+                        body="",
+                        attachment_path=merged_path,
+                    )
+                except Exception as email_exc:  # noqa: BLE001
+                    _update_job(
+                        job_id,
+                        message=f"メール送信でエラーが発生しました: {email_exc}",
+                        email_delivery_status="failed",
+                    )
+                else:
+                    _update_job(
+                        job_id,
+                        message="PDFの送信が完了しました。",
+                        email_delivery_status="sent",
+                    )
+                finally:
+                    _schedule_delayed_cleanup()
+
+            email_thread = threading.Thread(target=_background_email_sender, daemon=True)
+            email_thread.start()
         else:
             raise RuntimeError("メール送信の設定が完了していません。環境変数を確認してください。")
-        _update_job(
-            job_id,
-            status="completed",
-            message="PDFの送信が完了しました。",
-            merged_pdf=merged_path,
-        )
-        _schedule_delayed_cleanup()
     except Exception as exc:  # noqa: BLE001
         _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
     finally:

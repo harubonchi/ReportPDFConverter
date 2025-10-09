@@ -385,6 +385,10 @@
           const statusElement = document.getElementById("status");
           const messageElement = document.getElementById("message");
           const timestampElement = document.getElementById("timestamp");
+          const emailDeliveryStatusRaw =
+            typeof data.email_delivery_status === "string"
+              ? data.email_delivery_status.trim().toLowerCase()
+              : "";
 
           statusElement.textContent = statusLabels[data.status] || data.status;
           statusElement.className = "status-value " + data.status;
@@ -482,7 +486,13 @@
             }
             if (shouldShowCompletionDetails) {
               updateEmailText();
-              shouldStopPolling = true;
+              if (
+                emailDeliveryStatusRaw === "sent" ||
+                emailDeliveryStatusRaw === "failed" ||
+                !emailDeliveryStatusRaw
+              ) {
+                shouldStopPolling = true;
+              }
             } else if (emailTextArea) {
               emailTextArea.value = "";
             }
