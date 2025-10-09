@@ -426,6 +426,8 @@ upload_sessions: Dict[str, Dict[str, object]] = {}
 
 EMAIL_CONFIG = EmailConfig.from_env()
 
+DEFAULT_RECIPIENT_EMAIL = "roboken.report.tool@gmail.com"
+
 
 def _infer_team_directory_level(paths: List[PurePosixPath]) -> int | None:
     directories = [path.parts[:-1] for path in paths]
@@ -815,7 +817,7 @@ def _process_job(job_id: str) -> None:
             _update_job(
                 job_id,
                 status="completed",
-                message="PDFの結合が完了しました。メール送信をバックグラウンドで実行しています…",
+                message="PDFの結合が完了しました。",
                 merged_pdf=merged_path,
                 email_delivery_status="sending",
             )
@@ -863,12 +865,8 @@ def index() -> str:
 
 @app.route("/prepare", methods=["POST"])
 def prepare_upload() -> Response | str:
-    email = request.form.get("email", "").strip()
     zip_file = request.files.get("zip_file")
 
-    if not email:
-        flash("メールアドレスを入力してください。")
-        return redirect(url_for("index"))
     if not zip_file or not zip_file.filename:
         flash("アップロードするZIPファイルを選択してください。")
         return redirect(url_for("index"))
@@ -947,7 +945,6 @@ def prepare_upload() -> Response | str:
     return render_template(
         "order.html",
         job_id=job_id,
-        email=email,
         ordered_display_names=ordered_display_names,
         team_blocks=team_blocks,
         initial_state=initial_state,
@@ -1083,14 +1080,10 @@ def api_default_order() -> Response:
 @app.route("/start", methods=["POST"])
 def start_processing() -> str:
     job_id = request.form.get("job_id", "")
-    email = request.form.get("email", "").strip()
     order_data = request.form.get("order", "")
 
     if not job_id or job_id not in upload_sessions:
         flash("アップロード情報を確認できませんでした。もう一度お試しください。")
-        return redirect(url_for("index"))
-    if not email:
-        flash("メールアドレスを入力してください。")
         return redirect(url_for("index"))
     if not order_data:
         flash("処理を開始する前に順番を確定してください。")
@@ -1130,7 +1123,7 @@ def start_processing() -> str:
     zip_path = UPLOAD_DIR / f"{job_id}.zip"
     job_state = _create_job_state(
         job_id,
-        email,
+        DEFAULT_RECIPIENT_EMAIL,
         order,
         zip_path,
         entry_map,

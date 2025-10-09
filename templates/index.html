@@ -31,7 +31,6 @@
         margin-bottom: 0.5rem;
         font-weight: bold;
       }
-      input[type="email"],
       input[type="file"] {
         width: 100%;
         padding: 0.5rem;
@@ -97,7 +96,7 @@
     <h1>ロボ研報告書作成ツール</h1>
     <p>
       Word形式の報告書をまとめたZIPファイルをアップロードしてください。<br>
-      PDFに変換して結合し、指定したメールアドレスに送信します。
+      PDFに変換して結合します。
     </p>
     <p class="hint">
       ZIP内にR班やN班などのフォルダーがある場合は班名として自動認識します。<br>
@@ -113,9 +112,6 @@
     {% endwith %}
 
     <form action="{{ url_for('prepare_upload') }}" method="post" enctype="multipart/form-data">
-      <label for="email">送信先メールアドレス</label>
-      <input type="email" name="email" id="email" required placeholder="example@example.com" />
-
       <label for="zip_file">報告書が入ったZIPファイル</label>
       <input type="file" name="zip_file" id="zip_file" accept=".zip" required />
 
