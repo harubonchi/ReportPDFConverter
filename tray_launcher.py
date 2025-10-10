@@ -13,7 +13,9 @@ from werkzeug.serving import make_server
 from app import get_app
 
 from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtGui import QIcon, QPainter, QBrush, QPen, QColor, QPixmap, QAction
+from PyQt6.QtGui import (
+    QIcon, QPainter, QBrush, QPen, QColor, QPixmap, QAction, QCursor
+)
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 HOST = "127.0.0.1"
@@ -42,7 +44,9 @@ class ServerCtl:
                 self.port = self._find_free_port(self.host)
 
             self._server = make_server(self.host, self.port, self.app)
-            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+            self._thread = threading.Thread(
+                target=self._server.serve_forever, daemon=True
+            )
             self._thread.start()
 
     def stop(self):
@@ -90,6 +94,8 @@ def make_dot_icon(on: bool) -> QIcon:
 
 def main():
     app = QApplication(sys.argv)
+    QApplication.setQuitOnLastWindowClosed(False)
+
     if not QSystemTrayIcon.isSystemTrayAvailable():
         print("System tray not available.")
         sys.exit(1)
@@ -103,7 +109,7 @@ def main():
     # --- メニュー（日本語） ---
     menu = QMenu()
 
-    # 白背景・ホバー時の選択色を明示
+    # 白背景・ホバー時の選択色・左余白を詰める
     menu.setStyleSheet("""
         QMenu {
             background-color: #ffffff;               /* 白背景 */
@@ -115,7 +121,7 @@ def main():
             width: 0px;                              /* 左アイコン列を消す */
         }
         QMenu::item {
-            padding: 4px 10px;                       /* 各項目の内側余白 */
+            padding: 4px 10px;                       /* 各項目の内側余白（左を詰める） */
             margin: 0;
         }
         QMenu::item:selected {
@@ -144,7 +150,6 @@ def main():
     menu.addAction(act_open)
     menu.addSeparator()
     menu.addAction(act_exit)
-
 
     tray.setContextMenu(menu)
 
@@ -185,9 +190,11 @@ def main():
             pos = QCursor.pos()
             menu.popup(pos)
 
-    from PyQt6.QtGui import QCursor
     tray.activated.connect(on_activated)
 
     tray.show()
     sys.exit(app.exec())
-sys.exit(qt_app.exec())
+
+
+if __name__ == "__main__":
+    main()
