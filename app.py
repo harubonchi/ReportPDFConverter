@@ -282,31 +282,6 @@ class OrderManager:
         with self.storage_file.open("w", encoding="utf-8") as fh:
             json.dump(preferences.to_dict(), fh, ensure_ascii=False, indent=2)
 
-    def _merge_preferences(
-        self, existing: OrderPreferences, new: OrderPreferences
-    ) -> OrderPreferences:
-        team_sequence = _deduplicate_list(
-            list(new.team_sequence) + list(existing.team_sequence)
-        )
-
-        member_sequences: Dict[str, List[str]] = {
-            key: list(value) for key, value in existing.member_sequences.items()
-        }
-
-        for team_key, members in new.member_sequences.items():
-            cleaned_members = _normalize_member_names(members)
-            existing_members = member_sequences.setdefault(team_key, [])
-            for member in cleaned_members:
-                if member not in existing_members:
-                    existing_members.append(member)
-
-        if UNGROUPED_TEAM_KEY not in member_sequences:
-            team_sequence = [
-                team for team in team_sequence if team != UNGROUPED_TEAM_KEY
-            ]
-
-        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
-
     def load_preferences(self) -> OrderPreferences:
         if not self.storage_file.exists():
             return OrderPreferences.empty()
@@ -324,13 +299,6 @@ class OrderManager:
             return OrderPreferences.from_legacy_list(data)
 
         return OrderPreferences.empty()
-
-    def save(self, order: List[str], entries: Dict[str, ZipEntry]) -> None:
-        preferences = self._build_preferences(order, entries)
-        with self._lock:
-            existing = self.load_preferences()
-            merged = self._merge_preferences(existing, preferences)
-            self._write_preferences(merged)
 
     def save_member_sequence(self, team_key: str, members: List[str]) -> None:
         normalized_team = _normalize_team_key(team_key)
@@ -358,34 +326,6 @@ class OrderManager:
                 key for key in preferences.team_sequence if key != normalized_team
             ]
             self._write_preferences(preferences)
-
-    def _build_preferences(self, order: List[str], entries: Dict[str, ZipEntry]) -> OrderPreferences:
-        team_sequence: List[str] = []
-        member_sequences: Dict[str, List[str]] = {}
-
-        for display_name in order:
-            entry = entries.get(display_name)
-            if not entry:
-                continue
-            raw_team_name = (entry.team_name or "").strip()
-            if not raw_team_name:
-                # 班名が無い場合は保存しない
-                continue
-            team_key = _normalize_team_key(raw_team_name)
-            if team_key == UNGROUPED_TEAM_KEY:
-                # 自動生成される「班なし」グループは保存しない
-                continue
-            if team_key not in team_sequence:
-                team_sequence.append(team_key)
-            member_list = member_sequences.setdefault(team_key, [])
-            persons = entry.persons or []
-            if not persons:
-                continue
-            for person in persons:
-                if person not in member_list:
-                    member_list.append(person)
-
-        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
 
     def initial_layout(self, entries: List[ZipEntry]) -> tuple[List[str], Dict[str, List[ZipEntry]]]:
         preferences = self.load_preferences()
