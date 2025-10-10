@@ -4,21 +4,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# JRE を入れて JAVA_HOME を固定リンク化（フォントパッケージは入れない）
+# Java/Aspose を利用した変換処理は廃止し、Windows 環境での運用を前提としています。
+# この Dockerfile はバックエンド API の検証用途のみを想定しています。
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        default-jre-headless \
         ca-certificates \
         fontconfig \
     ; \
-    JH="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"; \
-    echo "Detected JAVA_HOME=${JH}"; \
-    ln -s "${JH}" /opt/java-home; \
     rm -rf /var/lib/apt/lists/*
-
-ENV JAVA_HOME=/opt/java-home
-ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
 WORKDIR /app
 
