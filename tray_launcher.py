@@ -1,83 +1,51 @@
-"""System tray launcher for the Report PDF Converter application.
-
-This module boots the Flask application defined in :mod:`app` in a background
-thread and provides a small Qt based system tray UI to control the web server.
-The file doubles as the PyInstaller entry point when bundling the project as a
-Windows executable.
-"""
-
+# tray_launcher_qt.py
 from __future__ import annotations
-
-import socket
 import sys
 import threading
 import webbrowser
+import socket
 from contextlib import closing
-from dataclasses import dataclass
-from typing import Callable
 
-from werkzeug.serving import BaseWSGIServer, make_server
+from werkzeug.serving import make_server
 
+# ★ ←ここをあなたのメインファイル名に合わせて変更（拡張子なし）
+# 例: メインが main.py なら: from main import get_app
 from app import get_app
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor, QCursor, QIcon, QPainter, QPen, QPixmap
-from PyQt6.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon
+from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtGui import QIcon, QPainter, QBrush, QPen, QColor, QPixmap, QAction
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
-
-# Default host and port used by the embedded Flask server.
 HOST = "127.0.0.1"
-PORT = 80
+PORT = 80  # 既存UIの想定ポート。競合なら空きポートへ回避
 
 
-class ServerError(RuntimeError):
-    """Raised when the embedded server encounters an unrecoverable error."""
-
-
-@dataclass(slots=True)
-class ServerState:
-    """Runtime configuration for the embedded Flask server."""
-
-    host: str = HOST
-    port: int = PORT
-
-
-class ServerController:
-    """Start and stop the Flask application in a background thread."""
-
-    def __init__(self, state: ServerState | None = None) -> None:
-        self.state = state or ServerState()
-        self._server: BaseWSGIServer | None = None
-        self._thread: threading.Thread | None = None
+# ---- Flaskサーバ制御 ----
+class ServerCtl:
+    def __init__(self):
+        self._server = None
+        self._thread = None
         self._lock = threading.Lock()
-        self._app = get_app()
+        self.host = HOST
+        self.port = PORT
+        self.app = get_app()
 
-    # ---- public API -------------------------------------------------
-    def start(self) -> None:
-        """Start the Flask development server if it is not already running."""
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._server is not None
 
+    def start(self):
         with self._lock:
             if self._server is not None:
                 return
-            host, port = self.state.host, self.state.port
-            if not _is_port_available(host, port):
-                port = _find_free_port(host)
-                self.state.port = port
+            if not self._port_free(self.host, self.port):
+                self.port = self._find_free_port(self.host)
 
-            try:
-                self._server = make_server(host, port, self._app)
-            except OSError as exc:  # pragma: no cover - defensive branch
-                raise ServerError("Failed to initialise the embedded server") from exc
-
-            self._thread = threading.Thread(
-                target=self._server.serve_forever,
-                daemon=True,
-            )
+            self._server = make_server(self.host, self.port, self.app)
+            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
 
-    def stop(self) -> None:
-        """Stop the running server, if any."""
-
+    def stop(self):
         with self._lock:
             if self._server is None:
                 return
@@ -86,70 +54,72 @@ class ServerController:
             self._server = None
             self._thread = None
 
-    def is_running(self) -> bool:
-        """Return ``True`` when the server thread is active."""
+    @staticmethod
+    def _port_free(host, port) -> bool:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.settimeout(0.2)
+            return s.connect_ex((host, port)) != 0
 
-        with self._lock:
-            return self._server is not None
-
-
-def _is_port_available(host: str, port: int) -> bool:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.settimeout(0.2)
-        return sock.connect_ex((host, port)) != 0
-
-
-def _find_free_port(host: str) -> int:
-    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-        sock.bind((host, 0))
-        return sock.getsockname()[1]
+    @staticmethod
+    def _find_free_port(host) -> int:
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.bind((host, 0))
+            return s.getsockname()[1]
 
 
-def _make_status_icon(active: bool) -> QIcon:
-    """Generate a circular status icon indicating the server state."""
-
+# ---- アイコン（緑=ON / 赤=OFF）をQtで描画 ----
+def make_dot_icon(on: bool) -> QIcon:
     size = 128
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.GlobalColor.transparent)
-
-    painter = QPainter(pixmap)
+    pm = QPixmap(size, size)
+    pm.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pm)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-    color = QColor(0, 160, 0) if active else QColor(160, 0, 0)
-    painter.setBrush(color)
-
+    color = QColor(0, 160, 0) if on else QColor(160, 0, 0)
+    brush = QBrush(color)
     pen = QPen(QColor(255, 255, 255, 230))
     pen.setWidth(6)
-    painter.setPen(pen)
 
+    painter.setBrush(brush)
+    painter.setPen(pen)
     margin = 16
     painter.drawEllipse(margin, margin, size - 2 * margin, size - 2 * margin)
     painter.end()
-    return QIcon(pixmap)
+    return QIcon(pm)
 
 
-def _build_menu(*actions: QAction) -> QMenu:
-    if len(actions) != 4:
-        raise ValueError("Expected start, stop, open and exit actions")
+def main():
+    app = QApplication(sys.argv)
+    if not QSystemTrayIcon.isSystemTrayAvailable():
+        print("System tray not available.")
+        sys.exit(1)
 
+    ctl = ServerCtl()
+
+    tray = QSystemTrayIcon()
+    tray.setToolTip("ロボ研報告書作成サーバ (OFF)")
+    tray.setIcon(make_dot_icon(on=False))
+
+    # --- メニュー（日本語） ---
     menu = QMenu()
-    menu.setStyleSheet(
-        """
+
+    # 白背景・ホバー時の選択色を明示
+    menu.setStyleSheet("""
         QMenu {
-            background-color: #ffffff;
-            color: #000000;
-            border: 1px solid #cccccc;
+            background-color: #ffffff;               /* 白背景 */
+            color: #000000;                          /* 通常テキスト色 */
+            border: 1px solid #cccccc;               /* 薄い枠線 */
             padding: 2px 0;
         }
         QMenu::icon {
-            width: 0px;
+            width: 0px;                              /* 左アイコン列を消す */
         }
         QMenu::item {
-            padding: 4px 10px;
+            padding: 4px 10px;                       /* 各項目の内側余白 */
             margin: 0;
         }
         QMenu::item:selected {
-            background-color: #e6f0ff;
+            background-color: #e6f0ff;               /* ホバー時の青みハイライト */
             color: #000000;
         }
         QMenu::separator {
@@ -157,91 +127,67 @@ def _build_menu(*actions: QAction) -> QMenu:
             margin: 3px 0;
             background: #e0e0e0;
         }
-        """
-    )
+    """)
 
-    start, stop, open_action, exit_action = actions
-    for action in actions:
-        action.setIconVisibleInMenu(False)
+    act_start = QAction("サーバー開始", menu)
+    act_stop  = QAction("サーバー停止", menu)
+    act_open  = QAction("画面を開く", menu)
+    act_exit  = QAction("終了", menu)
 
-    menu.addAction(start)
-    menu.addAction(stop)
+    # アイコン非表示
+    for a in (act_start, act_stop, act_open, act_exit):
+        a.setIconVisibleInMenu(False)
+
+    menu.addAction(act_start)
+    menu.addAction(act_stop)
     menu.addSeparator()
-    menu.addAction(open_action)
+    menu.addAction(act_open)
     menu.addSeparator()
-    menu.addAction(exit_action)
-    return menu
+    menu.addAction(act_exit)
 
 
-def _connect_action(action: QAction, callback: Callable[[], None]) -> None:
-    action.triggered.connect(callback)  # type: ignore[arg-type]
+    tray.setContextMenu(menu)
 
+    # --- アクション動作 ---
+    def do_start():
+        ctl.start()
+        tray.setIcon(make_dot_icon(on=True))
+        tray.setToolTip(f"ロボ研報告書作成サーバ (ON) http://{ctl.host}:{ctl.port}")
 
-def _set_tray_state(tray: QSystemTrayIcon, *, running: bool) -> None:
-    """Update the tray icon and tooltip based on ``running``."""
+    def do_stop():
+        ctl.stop()
+        tray.setIcon(make_dot_icon(on=False))
+        tray.setToolTip("ロボ研報告書作成サーバ (OFF)")
 
-    tray.setIcon(_make_status_icon(active=running))
-    status = "ON" if running else "OFF"
-    tray.setToolTip(f"ロボ研報告書作成サーバ ({status})")
+    def do_open():
+        if not ctl.is_running():
+            do_start()
+        webbrowser.open(f"http://{ctl.host}:{ctl.port}/")
 
-
-def main() -> None:
-    qt_app = QApplication(sys.argv)
-    if not QSystemTrayIcon.isSystemTrayAvailable():
-        print("System tray not available.")
-        sys.exit(1)
-
-    server = ServerController()
-
-    tray = QSystemTrayIcon()
-    _set_tray_state(tray, running=False)
-
-    act_start = QAction("サーバー開始")
-    act_stop = QAction("サーバー停止")
-    act_open = QAction("画面を開く")
-    act_exit = QAction("終了")
-
-    def start_server() -> None:
-        server.start()
-        _set_tray_state(tray, running=True)
-        tray.setToolTip(
-            f"ロボ研報告書作成サーバ (ON) http://{server.state.host}:{server.state.port}"
-        )
-
-    def stop_server() -> None:
-        server.stop()
-        _set_tray_state(tray, running=False)
-
-    def open_browser() -> None:
-        if not server.is_running():
-            start_server()
-        webbrowser.open(f"http://{server.state.host}:{server.state.port}/")
-
-    def exit_application() -> None:
-        stop_server()
+    def do_exit():
+        do_stop()
         tray.hide()
         QApplication.quit()
 
-    _connect_action(act_start, start_server)
-    _connect_action(act_stop, stop_server)
-    _connect_action(act_open, open_browser)
-    _connect_action(act_exit, exit_application)
+    act_start.triggered.connect(do_start)
+    act_stop.triggered.connect(do_stop)
+    act_open.triggered.connect(do_open)
+    act_exit.triggered.connect(do_exit)
 
-    menu = _build_menu(act_start, act_stop, act_open, act_exit)
-    tray.setContextMenu(menu)
+    # --- 左クリックでメニューを開く ---
+    # Windowsでは Trigger（シングル左クリック）/ DoubleClick で拾えます。
+    def on_activated(reason: QSystemTrayIcon.ActivationReason):
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,       # 左クリック
+            QSystemTrayIcon.ActivationReason.DoubleClick,   # 左ダブルクリック
+        ):
+            # カーソル位置にメニューを表示
+            pos = QCursor.pos()
+            menu.popup(pos)
 
-    def on_activation(reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason in {
-            QSystemTrayIcon.ActivationReason.Trigger,
-            QSystemTrayIcon.ActivationReason.DoubleClick,
-        }:
-            menu.popup(QCursor.pos())
-
-    tray.activated.connect(on_activation)  # type: ignore[arg-type]
+    from PyQt6.QtGui import QCursor
+    tray.activated.connect(on_activated)
 
     tray.show()
-    sys.exit(qt_app.exec())
-
-
-if __name__ == "__main__":
-    main()
+    sys.exit(app.exec())
+sys.exit(qt_app.exec())
