@@ -27,7 +27,7 @@ from PyQt6.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon
 
 # Default host and port used by the embedded Flask server.
 HOST = "127.0.0.1"
-PORT = 8000
+PORT = 80
 
 
 class ServerError(RuntimeError):
