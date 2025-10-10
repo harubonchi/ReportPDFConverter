@@ -8,7 +8,7 @@ import threading
 import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Dict, Hashable, Iterable, Iterator, List, TypeVar
@@ -420,6 +420,9 @@ class JobState:
     progress_current: int = 0
     progress_total: int = 0
     email_delivery_status: str = "pending"
+    conversion_order: List[str] = field(default_factory=list)
+    conversion_statuses: Dict[str, str] = field(default_factory=dict)
+    conversion_threads: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, object]:
         elapsed_seconds: float | None = None
@@ -451,6 +454,14 @@ class JobState:
             "progress_total": self.progress_total,
             "progress_percent": progress_percent,
             "email_delivery_status": self.email_delivery_status,
+            "conversion_progress": [
+                {
+                    "display_name": name,
+                    "status": self.conversion_statuses.get(name, "queued"),
+                    "thread": self.conversion_threads.get(name),
+                }
+                for name in self.conversion_order
+            ],
         }
 
 
@@ -758,6 +769,36 @@ def _create_job_state(
     )
 
 
+def _initialize_conversion_progress(job_id: str, entries: List[ZipEntry]) -> None:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return
+        now = datetime.now(JST)
+        job.conversion_order = [entry.display_name for entry in entries]
+        job.conversion_statuses = {
+            entry.display_name: "queued" for entry in entries
+        }
+        job.conversion_threads = {
+            entry.display_name: index + 1 for index, entry in enumerate(entries)
+        }
+        job.updated_at = now
+
+
+def _update_conversion_status(job_id: str, display_name: str, status: str) -> None:
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            return
+        now = datetime.now(JST)
+        if display_name not in job.conversion_order:
+            job.conversion_order.append(display_name)
+        job.conversion_statuses[display_name] = status
+        if display_name not in job.conversion_threads:
+            job.conversion_threads[display_name] = len(job.conversion_threads) + 1
+        job.updated_at = now
+
+
 def _update_job(
     job_id: str,
     *,
@@ -829,6 +870,7 @@ def _process_job(job_id: str) -> None:
             raise RuntimeError("処理対象のドキュメントが見つかりませんでした。")
 
         total_steps = len(ordered_entries)
+        _initialize_conversion_progress(job_id, ordered_entries)
         _update_job(
             job_id,
             progress_total=total_steps,
@@ -844,12 +886,19 @@ def _process_job(job_id: str) -> None:
 
         def _convert_entry(index: int, entry: ZipEntry) -> tuple[int, Path]:
             _update_job(job_id, message=f"{entry.display_name} をPDFに変換しています…")
+            _update_conversion_status(job_id, entry.display_name, "running")
             source_path = extract_dir / entry.archive_name
             if not source_path.exists():
+                _update_conversion_status(job_id, entry.display_name, "failed")
                 raise FileNotFoundError(
                     f"展開後のファイルが見つかりません: {entry.archive_name}"
                 )
-            pdf_path = convert_word_to_pdf(source_path, pdf_dir)
+            try:
+                pdf_path = convert_word_to_pdf(source_path, pdf_dir)
+            except Exception:
+                _update_conversion_status(job_id, entry.display_name, "failed")
+                raise
+            _update_conversion_status(job_id, entry.display_name, "completed")
             _update_job(job_id, progress_increment=1)
             return index, pdf_path
 

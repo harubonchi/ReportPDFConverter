@@ -63,27 +63,60 @@
         font-size: 0.95rem;
         color: #475569;
       }
-      .progress-wrapper {
-        margin-top: 1.25rem;
+      .conversion-section {
+        margin-top: 1.75rem;
       }
-      .progress-track {
-        width: 100%;
-        height: 12px;
-        background: #e2e8f0;
-        border-radius: 999px;
-        overflow: hidden;
+      .conversion-section h2 {
+        margin: 0 0 0.75rem 0;
+        color: #0b7285;
+        font-size: 1.25rem;
       }
-      .progress-bar {
-        height: 100%;
-        width: 0%;
-        background: linear-gradient(90deg, #0b7285, #38bdf8);
-        transition: width 0.3s ease;
+      .conversion-grid {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
       }
-      .progress-text {
-        margin-top: 0.5rem;
-        font-size: 0.95rem;
-        color: #0f172a;
+      .conversion-item {
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .conversion-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
         font-weight: 600;
+        color: #0f172a;
+      }
+      .conversion-thread {
+        background: #e0f2fe;
+        color: #0369a1;
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .conversion-status {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .conversion-status.queued {
+        color: #475569;
+      }
+      .conversion-status.running {
+        color: #0b7285;
+      }
+      .conversion-status.completed {
+        color: #2b8a3e;
+      }
+      .conversion-status.failed {
+        color: #c92a2a;
       }
       .completed {
         color: #2b8a3e;
@@ -212,19 +245,10 @@
       </div>
     </div>
 
-    <div id="progress-wrapper" class="progress-wrapper" hidden>
-      <div
-        id="progress-track"
-        class="progress-track"
-        role="progressbar"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="0"
-      >
-        <div id="progress-bar" class="progress-bar"></div>
-      </div>
-      <div id="progress-text" class="progress-text"></div>
-    </div>
+    <section id="conversion-section" class="conversion-section" hidden>
+      <h2>ファイルごとの進捗</h2>
+      <div id="conversion-grid" class="conversion-grid" role="list"></div>
+    </section>
 
     <div id="email-template-section" class="email-template" hidden>
       <h2>先生にメールを送る場合の文章テンプレート</h2>
@@ -271,15 +295,19 @@
       const emailTextArea = document.getElementById("email-template-text");
       const copyButton = document.getElementById("copy-template");
       const copyFeedback = document.getElementById("copy-feedback");
-      const progressWrapper = document.getElementById("progress-wrapper");
-      const progressTrack = document.getElementById("progress-track");
-      const progressBar = document.getElementById("progress-bar");
-      const progressText = document.getElementById("progress-text");
+      const conversionSection = document.getElementById("conversion-section");
+      const conversionGrid = document.getElementById("conversion-grid");
       const downloadLink = document.getElementById("download-link");
       if (downloadLink) {
         downloadLink.hidden = true;
         downloadLink.style.display = "none";
       }
+      const conversionStatusLabels = {
+        queued: "待機中",
+        running: "処理中",
+        completed: "完了",
+        failed: "失敗",
+      };
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
       const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
@@ -374,6 +402,61 @@
         });
       }
 
+      function updateConversionProgress(entries) {
+        if (!conversionSection || !conversionGrid) {
+          return;
+        }
+        const items = Array.isArray(entries)
+          ? entries.filter((entry) => entry && typeof entry === "object")
+          : [];
+        conversionGrid.innerHTML = "";
+        if (!items.length) {
+          conversionSection.hidden = true;
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        items.forEach((entry) => {
+          const displayName = typeof entry.display_name === "string"
+            ? entry.display_name
+            : "(ファイル名未取得)";
+          const statusKey = typeof entry.status === "string"
+            ? entry.status.toLowerCase()
+            : "queued";
+          const statusLabel = conversionStatusLabels[statusKey] || statusKey;
+          const statusClass = ["queued", "running", "completed", "failed"].includes(statusKey)
+            ? statusKey
+            : "queued";
+          const card = document.createElement("article");
+          card.className = "conversion-item";
+          card.setAttribute("role", "listitem");
+
+          const header = document.createElement("div");
+          header.className = "conversion-header";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = displayName;
+          header.appendChild(nameSpan);
+
+          if (typeof entry.thread === "number" && entry.thread > 0) {
+            const threadBadge = document.createElement("span");
+            threadBadge.className = "conversion-thread";
+            threadBadge.textContent = `スレッド${entry.thread}`;
+            header.appendChild(threadBadge);
+          }
+
+          const statusSpan = document.createElement("span");
+          statusSpan.className = `conversion-status ${statusClass}`;
+          statusSpan.textContent = statusLabel;
+
+          card.appendChild(header);
+          card.appendChild(statusSpan);
+          fragment.appendChild(card);
+        });
+
+        conversionGrid.appendChild(fragment);
+        conversionSection.hidden = false;
+      }
+
       async function refreshStatus() {
         try {
           const response = await fetch(statusUrl);
@@ -414,42 +497,7 @@
           }
           let metaText = updatedAtText;
 
-          const totalStepsValue = Number(data.progress_total);
-          const currentStepsValue = Number(data.progress_current);
-          const hasTotal = Number.isFinite(totalStepsValue) && totalStepsValue > 0;
-          const currentSteps = Number.isFinite(currentStepsValue)
-            ? Math.max(0, currentStepsValue)
-            : 0;
-          const totalSteps = hasTotal ? totalStepsValue : 0;
-          let percentValue =
-            typeof data.progress_percent === "number" ? data.progress_percent : null;
-          if (percentValue === null && totalSteps > 0) {
-            percentValue = Math.round((currentSteps / totalSteps) * 100);
-          }
-          if (percentValue === null) {
-            percentValue = 0;
-          }
-          const safePercent = Math.min(100, Math.max(0, percentValue));
-
-          if (progressWrapper) {
-            if (totalSteps > 0) {
-              progressWrapper.hidden = false;
-              if (progressBar) {
-                progressBar.style.width = `${safePercent}%`;
-              }
-              if (progressTrack) {
-                progressTrack.setAttribute("aria-valuenow", String(safePercent));
-              }
-              if (progressText) {
-                progressText.textContent = `進捗: ${Math.min(currentSteps, totalSteps)}/${totalSteps} (${safePercent}%)`;
-              }
-            } else {
-              progressWrapper.hidden = true;
-              if (progressText) {
-                progressText.textContent = "";
-              }
-            }
-          }
+          updateConversionProgress(data.conversion_progress);
 
           if (!teamOptionsInitialized && data.team_options) {
             populateTeamOptions(data.team_options);
