@@ -192,6 +192,9 @@ def main():
 
     tray.activated.connect(on_activated)
 
+    # 起動と同時にサーバを立ち上げる
+    do_start()
+
     tray.show()
     sys.exit(app.exec())
 

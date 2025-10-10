@@ -225,7 +225,7 @@
     <h1>処理状況</h1>
     <p>
       ジョブIDは <strong>{{ job_id }}</strong> です。<br>
-      処理が完了するまで数秒おきに自動更新されます。
+      処理が完了するまで進捗が自動更新されます。
     </p>
 
     <div class="status-box">
@@ -593,7 +593,7 @@
             messageElement.hidden = false;
           }
         }
-        setTimeout(refreshStatus, 3000);
+        setTimeout(refreshStatus, 100);
       }
 
       refreshStatus();
