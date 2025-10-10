@@ -11,7 +11,7 @@ DATAS = [
     (PROJECT_ROOT / "templates", "templates"),
     (PROJECT_ROOT / "static", "static"),
     (PROJECT_ROOT / "fonts", "fonts"),
-    (PROJECT_ROOT / "data" / "order.json", "data"),
+    (PROJECT_ROOT / "order.json", "."),
     (PROJECT_ROOT / "aspose-words-22.12-jdk17-unlocked.jar", "."),
 ]
 

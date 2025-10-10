@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import sys
 import threading
 import uuid
 import zipfile
@@ -38,21 +39,31 @@ PERSON_NORMALIZATION_PATTERN = re.compile(r"[\s・･.,，、．｡]+")
 
 JST = ZoneInfo("Asia/Tokyo")
 
-load_dotenv()
+
+def _resolve_base_dir() -> Path:
+    """Return the directory containing the running application."""
+
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
 
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = _resolve_base_dir()
+
+load_dotenv(BASE_DIR / ".env")
+
+
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 WORK_DIR = DATA_DIR / "work"
-ORDER_FILE = DATA_DIR / "order.json"
+ORDER_FILE = BASE_DIR / "order.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 
 def _cleanup_data_directories() -> None:
-    """Remove generated files from the data directory except for order.json."""
+    """Remove generated files from the upload and work directories."""
 
     for directory in (UPLOAD_DIR, WORK_DIR):
         if not directory.exists():

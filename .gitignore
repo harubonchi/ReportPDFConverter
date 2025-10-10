@@ -4,4 +4,4 @@ data/work
 .venv/
 test.patch
 .env
-build/
+build/.venv/
