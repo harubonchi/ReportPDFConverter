@@ -416,7 +416,7 @@ class JobState:
 
 
 app = Flask(__name__)
-app.secret_key = "gain-report-emailer"
+app.secret_key = "pdf-report-converter"
 
 executor = ThreadPoolExecutor(max_workers=2)
 jobs: Dict[str, JobState] = {}
