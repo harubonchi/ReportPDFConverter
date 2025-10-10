@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shutil
 import sys
@@ -50,7 +51,44 @@ def _resolve_base_dir() -> Path:
 
 BASE_DIR = _resolve_base_dir()
 
-load_dotenv(BASE_DIR / ".env")
+
+def _load_environment_variables() -> None:
+    """Load environment variables from .env files in common locations."""
+
+    candidates = []
+
+    # .env distributed alongside the executable/script.
+    candidates.append(BASE_DIR / ".env")
+
+    # .env bundled inside PyInstaller one-file archives lives under _MEIPASS.
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidates.append(Path(meipass) / ".env")
+
+    # Support running from an arbitrary working directory during development.
+    cwd = Path.cwd()
+    if cwd != BASE_DIR:
+        candidates.append(cwd / ".env")
+
+    loaded_any = False
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if not candidate.exists():
+            continue
+        load_dotenv(candidate)
+        loaded_any = True
+
+    if not loaded_any:
+        logging.getLogger(__name__).debug(
+            "No .env file loaded. Checked locations: %s",
+            ", ".join(str(path) for path in seen) or "(none)",
+        )
+
+
+_load_environment_variables()
 
 
 DATA_DIR = BASE_DIR / "data"
