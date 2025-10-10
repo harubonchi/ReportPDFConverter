@@ -7,7 +7,7 @@ import sys
 import threading
 import uuid
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -838,19 +838,43 @@ def _process_job(job_id: str) -> None:
         report_number = _determine_report_number(job.zip_original_name, ordered_entries)
         job.report_number = report_number
 
-        pdf_paths: List[Path] = []
-        for entry in ordered_entries:
+        _update_job(job_id, message="PDFファイルを並列で変換しています…")
+
+        pdf_paths: List[Path | None] = [None] * len(ordered_entries)
+
+        def _convert_entry(index: int, entry: ZipEntry) -> tuple[int, Path]:
             _update_job(job_id, message=f"{entry.display_name} をPDFに変換しています…")
             source_path = extract_dir / entry.archive_name
             if not source_path.exists():
-                raise FileNotFoundError(f"展開後のファイルが見つかりません: {entry.archive_name}")
+                raise FileNotFoundError(
+                    f"展開後のファイルが見つかりません: {entry.archive_name}"
+                )
             pdf_path = convert_word_to_pdf(source_path, pdf_dir)
-            pdf_paths.append(pdf_path)
             _update_job(job_id, progress_increment=1)
+            return index, pdf_path
+
+        max_workers = max(len(ordered_entries), 1)
+        with ThreadPoolExecutor(max_workers=max_workers) as conversion_pool:
+            futures = {
+                conversion_pool.submit(_convert_entry, index, entry): index
+                for index, entry in enumerate(ordered_entries)
+            }
+            try:
+                for future in as_completed(futures):
+                    index, pdf_path = future.result()
+                    pdf_paths[index] = pdf_path
+            except Exception:
+                for future in futures:
+                    future.cancel()
+                raise
+
+        pdf_paths_resolved = [path for path in pdf_paths if path is not None]
+        if len(pdf_paths_resolved) != len(ordered_entries):
+            raise RuntimeError("PDF変換結果の整合性に問題があります。")
 
         merged_path = work_root / f"第{report_number}回報告書.pdf"
         _update_job(job_id, message="PDFファイルを結合しています…")
-        merge_pdfs(pdf_paths, merged_path)
+        merge_pdfs(pdf_paths_resolved, merged_path)
 
         recipient_email = (job.email or "").strip()
         should_send_email = EMAIL_CONFIG.is_configured and bool(recipient_email)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import platform
+import threading
 from pathlib import Path
 
 import jpype
@@ -16,6 +17,7 @@ ASPOSE_JAR_NAME = os.environ.get("ASPOSE_JAR_NAME", "aspose-words-22.12-jdk17-un
 _ENV_JVM_PATH = os.environ.get("JVM_PATH")
 SUPPORTED_EXTENSIONS = {".doc", ".docx"}
 _IS_WINDOWS = platform.system().lower() == "windows"
+_JVM_START_LOCK = threading.Lock()
 
 
 class ConversionError(RuntimeError):
@@ -52,10 +54,13 @@ def _start_jvm() -> None:
 
     if jpype.isJVMStarted():
         return
-    jar_path = _get_aspose_jar()
-    jvm_path = _jvm_path()
-    # 明示JVM + クラスパス。jpype.startJVM は同一プロセス内で一度だけ呼び出す。
-    jpype.startJVM(jvm_path, convertStrings=False, classpath=[str(jar_path)])
+    with _JVM_START_LOCK:
+        if jpype.isJVMStarted():
+            return
+        jar_path = _get_aspose_jar()
+        jvm_path = _jvm_path()
+        # 明示JVM + クラスパス。jpype.startJVM は同一プロセス内で一度だけ呼び出す。
+        jpype.startJVM(jvm_path, convertStrings=False, classpath=[str(jar_path)])
 
 
 def _java_diagnostics() -> None:
