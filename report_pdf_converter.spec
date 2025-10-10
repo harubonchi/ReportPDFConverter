@@ -4,8 +4,11 @@
 import os
 import pathlib
 
-PROJECT_ROOT = pathlib.Path(os.getcwd())
+from PyInstaller.utils.hooks import collect_submodules
 
+
+PROJECT_ROOT = pathlib.Path(os.getcwd())
+ENTRY_SCRIPT = PROJECT_ROOT / "tray_launcher.py"
 
 DATAS = [
     (PROJECT_ROOT / "templates", "templates"),
@@ -26,11 +29,11 @@ def _normalize_datas(entries):
 
 
 a = Analysis(
-    ['app.py'],
+    [str(ENTRY_SCRIPT)],
     pathex=[str(PROJECT_ROOT)],
     binaries=[],
     datas=_normalize_datas(DATAS),
-    hiddenimports=[],
+    hiddenimports=collect_submodules("PyQt6"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -42,6 +42,20 @@
    ```
 4. ブラウザで `http://localhost:8000` にアクセスすると、アップロード画面が表示されます。
 
+### PyInstaller によるトレイランチャー付きバンドル
+
+Windows 向けに PyInstaller を用いて実行ファイルを作成する場合は、
+`tray_launcher.py` をエントリーポイントとして利用してください。既定の
+`.spec` ファイルはトレイランチャーを起動するよう更新されているため、
+以下のコマンドでビルドできます。
+
+```bash
+pyinstaller report_pdf_converter.spec
+```
+
+生成された `ReportPDFConverter.exe` はシステムトレイアイコンを常駐させ、
+Web アプリケーションの起動・停止・ブラウザ表示を制御します。
+
 ## 使い方
 
 1. Word 文書（`.doc` / `.docx`）を 1 つの ZIP ファイルにまとめます。
