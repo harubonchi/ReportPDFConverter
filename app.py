@@ -1170,6 +1170,9 @@ def job_status(job_id: str) -> Response:
             return jsonify({"error": "ジョブが見つかりません。"}), 404
         return jsonify(job.to_dict())
 
+def get_app():
+    """Trayランチャー等からインポートするための取り出し口"""
+    return app
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8000)

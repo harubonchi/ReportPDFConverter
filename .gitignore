@@ -5,3 +5,4 @@ data/work
 test.patch
 .env
 build/
+dist/
