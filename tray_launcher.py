@@ -177,6 +177,14 @@ def _connect_action(action: QAction, callback: Callable[[], None]) -> None:
     action.triggered.connect(callback)  # type: ignore[arg-type]
 
 
+def _set_tray_state(tray: QSystemTrayIcon, *, running: bool) -> None:
+    """Update the tray icon and tooltip based on ``running``."""
+
+    tray.setIcon(_make_status_icon(active=running))
+    status = "ON" if running else "OFF"
+    tray.setToolTip(f"ロボ研報告書作成サーバ ({status})")
+
+
 def main() -> None:
     qt_app = QApplication(sys.argv)
     if not QSystemTrayIcon.isSystemTrayAvailable():
@@ -186,8 +194,7 @@ def main() -> None:
     server = ServerController()
 
     tray = QSystemTrayIcon()
-    tray.setToolTip("ロボ研報告書作成サーバ (OFF)")
-    tray.setIcon(_make_status_icon(active=False))
+    _set_tray_state(tray, running=False)
 
     act_start = QAction("サーバー開始")
     act_stop = QAction("サーバー停止")
@@ -196,15 +203,14 @@ def main() -> None:
 
     def start_server() -> None:
         server.start()
-        tray.setIcon(_make_status_icon(active=True))
+        _set_tray_state(tray, running=True)
         tray.setToolTip(
             f"ロボ研報告書作成サーバ (ON) http://{server.state.host}:{server.state.port}"
         )
 
     def stop_server() -> None:
         server.stop()
-        tray.setIcon(_make_status_icon(active=False))
-        tray.setToolTip("ロボ研報告書作成サーバ (OFF)")
+        _set_tray_state(tray, running=False)
 
     def open_browser() -> None:
         if not server.is_running():

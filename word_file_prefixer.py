@@ -31,7 +31,7 @@ WORD_EXTENSIONS: Set[str] = {".doc", ".docx"}
 ORDER_PREFIX_PATTERN = re.compile(r"^(?P<index>\d+)[_-](?P<name>.+)$")
 
 
-@dataclasses.dataclass
+@dataclasses.dataclass(slots=True)
 class GroupDirectory:
     """Represents a group directory and its resolved group name."""
 
@@ -98,6 +98,19 @@ def iter_group_directories(root_path: Path) -> Iterator[GroupDirectory]:
             yield GroupDirectory(child)
 
 
+def _sorted_groups(
+    groups: Sequence[GroupDirectory], desired_order: Sequence[str]
+) -> List[GroupDirectory]:
+    normalised_order = {name: index for index, name in enumerate(desired_order)}
+    return sorted(
+        groups,
+        key=lambda group: (
+            normalised_order.get(group.group_name, len(normalised_order)),
+            group.group_name,
+        ),
+    )
+
+
 def reorder_group_directories(
     groups: Sequence[GroupDirectory],
     desired_order: Sequence[str],
@@ -113,8 +126,6 @@ def reorder_group_directories(
     if not groups:
         return
 
-    normalised_order = {name: index for index, name in enumerate(desired_order)}
-
     seen_names: Set[str] = set()
     for group in groups:
         if group.group_name in seen_names:
@@ -123,13 +134,7 @@ def reorder_group_directories(
             )
         seen_names.add(group.group_name)
 
-    ordered_groups = sorted(
-        groups,
-        key=lambda group: (
-            normalised_order.get(group.group_name, len(normalised_order)),
-            group.group_name,
-        ),
-    )
+    ordered_groups = _sorted_groups(groups, desired_order)
 
     padding = max(2, len(str(len(ordered_groups))))
 
@@ -189,6 +194,8 @@ def generate_unique_name(file_path: Path, prefix: str) -> str:
 
 
 def parse_arguments(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments for the prefixer utility."""
+
     parser = argparse.ArgumentParser(
         description="Prefix Word files in group folders with their group names",
     )
@@ -240,15 +247,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 def preview_order(groups: Sequence[GroupDirectory], desired_order: Sequence[str]) -> None:
     """Print the new order without applying changes."""
 
-    normalised_order = {name: index for index, name in enumerate(desired_order)}
-    ordered_groups = sorted(
-        groups,
-        key=lambda group: (
-            normalised_order.get(group.group_name, len(normalised_order)),
-            group.group_name,
-        ),
-    )
-
+    ordered_groups = _sorted_groups(groups, desired_order)
     print("Planned group order:")
     for index, group in enumerate(ordered_groups, start=1):
         print(f"  {index:02d}. {group.group_name}")

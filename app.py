@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
-from typing import Dict, List
+from typing import Dict, Hashable, Iterable, Iterator, List, TypeVar
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -60,6 +60,26 @@ ORDER_FILE = BASE_DIR / "order.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
+
+
+T = TypeVar("T", bound=Hashable)
+
+
+def _iter_unique(items: Iterable[T]) -> Iterator[T]:
+    """Yield items while preserving the first occurrence order."""
+
+    seen: set[T] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        yield item
+
+
+def _deduplicate_list(items: Iterable[T]) -> List[T]:
+    """Return a list containing the first occurrence of every item in ``items``."""
+
+    return list(_iter_unique(items))
 
 
 def _cleanup_data_directories() -> None:
@@ -114,6 +134,8 @@ UNGROUPED_TEAM_KEY = "__ungrouped__"
 
 
 def _normalize_team_key(value: str | None) -> str:
+    """Return a consistent key for grouping teams."""
+
     if not isinstance(value, str):
         return UNGROUPED_TEAM_KEY
     candidate = value.strip()
@@ -126,6 +148,8 @@ def _normalize_team_key(value: str | None) -> str:
 
 @dataclass
 class OrderPreferences:
+    """Serializable storage for preferred team/member ordering."""
+
     team_sequence: List[str]
     member_sequences: Dict[str, List[str]]
 
@@ -138,6 +162,77 @@ class OrderPreferences:
             "team_sequence": self.team_sequence,
             "member_sequences": self.member_sequences,
         }
+
+    @classmethod
+    def from_dict(cls, payload: Dict[str, object]) -> "OrderPreferences":
+        raw_team_sequence = payload.get("team_sequence", [])
+        team_sequence: List[str] = []
+        if isinstance(raw_team_sequence, list):
+            team_sequence = _deduplicate_list(
+                _normalize_team_key(value)
+                for value in raw_team_sequence
+                if isinstance(value, str)
+            )
+
+        raw_members = payload.get("member_sequences", {})
+        member_sequences: Dict[str, List[str]] = {}
+        if isinstance(raw_members, dict):
+            for raw_key, raw_value in raw_members.items():
+                if not isinstance(raw_key, str) or not isinstance(raw_value, list):
+                    continue
+                team_key = _normalize_team_key(raw_key)
+                members = _normalize_member_names(raw_value)
+                if not members:
+                    continue
+                existing = member_sequences.setdefault(team_key, [])
+                for member in members:
+                    if member not in existing:
+                        existing.append(member)
+
+        if UNGROUPED_TEAM_KEY in member_sequences and not member_sequences[
+            UNGROUPED_TEAM_KEY
+        ]:
+            member_sequences.pop(UNGROUPED_TEAM_KEY, None)
+
+        if UNGROUPED_TEAM_KEY not in member_sequences:
+            team_sequence = [
+                team for team in team_sequence if team != UNGROUPED_TEAM_KEY
+            ]
+
+        return cls(team_sequence=team_sequence, member_sequences=member_sequences)
+
+    @classmethod
+    def from_legacy_list(cls, items: List[str]) -> "OrderPreferences":
+        member_sequences: Dict[str, List[str]] = {}
+        team_sequence: List[str] = []
+        for name in items:
+            if not isinstance(name, str):
+                continue
+            team_key = UNGROUPED_TEAM_KEY
+            stripped = name
+            if name.startswith("[") and "]" in name:
+                prefix, _, remainder = name.partition("]")
+                team_name = prefix[1:]
+                team_key = team_name or UNGROUPED_TEAM_KEY
+                stripped = remainder.strip()
+            team_key = _normalize_team_key(team_key)
+            if team_key not in team_sequence:
+                team_sequence.append(team_key)
+            members = member_sequences.setdefault(team_key, [])
+            if stripped and stripped not in members:
+                members.append(stripped)
+        return cls(team_sequence=team_sequence, member_sequences=member_sequences)
+
+
+def _normalize_member_names(members: Iterable[str]) -> List[str]:
+    cleaned: List[str] = []
+    for member in members:
+        if not isinstance(member, str):
+            continue
+        stripped = member.strip()
+        if stripped and stripped not in cleaned:
+            cleaned.append(stripped)
+    return cleaned
 
 class OrderManager:
     def __init__(self, storage_file: Path) -> None:
@@ -152,36 +247,32 @@ class OrderManager:
     def _merge_preferences(
         self, existing: OrderPreferences, new: OrderPreferences
     ) -> OrderPreferences:
-        team_sequence: List[str] = []
-        for team_key in new.team_sequence:
-            if team_key not in team_sequence:
-                team_sequence.append(team_key)
-        for team_key in existing.team_sequence:
-            if team_key not in team_sequence:
-                team_sequence.append(team_key)
+        team_sequence = _deduplicate_list(
+            list(new.team_sequence) + list(existing.team_sequence)
+        )
 
         member_sequences: Dict[str, List[str]] = {
             key: list(value) for key, value in existing.member_sequences.items()
         }
 
         for team_key, members in new.member_sequences.items():
-            merged_members: List[str] = []
-            seen: set[str] = set()
-            for member in members:
-                if member not in seen:
-                    merged_members.append(member)
-                    seen.add(member)
-            for member in existing.member_sequences.get(team_key, []):
-                if member not in seen:
-                    merged_members.append(member)
-                    seen.add(member)
-            member_sequences[team_key] = merged_members
+            cleaned_members = _normalize_member_names(members)
+            existing_members = member_sequences.setdefault(team_key, [])
+            for member in cleaned_members:
+                if member not in existing_members:
+                    existing_members.append(member)
+
+        if UNGROUPED_TEAM_KEY not in member_sequences:
+            team_sequence = [
+                team for team in team_sequence if team != UNGROUPED_TEAM_KEY
+            ]
 
         return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
 
     def load_preferences(self) -> OrderPreferences:
         if not self.storage_file.exists():
             return OrderPreferences.empty()
+
         try:
             with self.storage_file.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)
@@ -189,69 +280,12 @@ class OrderManager:
             return OrderPreferences.empty()
 
         if isinstance(data, dict):
-            team_sequence: List[str] = []
-            raw_sequence = data.get("team_sequence", [])
-            if isinstance(raw_sequence, list):
-                for item in raw_sequence:
-                    if not isinstance(item, str):
-                        continue
-                    normalized = _normalize_team_key(item)
-                    if normalized not in team_sequence:
-                        team_sequence.append(normalized)
-
-            member_sequences: Dict[str, List[str]] = {}
-            raw_members = data.get("member_sequences", {})
-            if isinstance(raw_members, dict):
-                for key, value in raw_members.items():
-                    if not isinstance(key, str) or not isinstance(value, list):
-                        continue
-                    normalized_key = _normalize_team_key(key)
-                    cleaned_members: List[str] = []
-                    for name in value:
-                        if not isinstance(name, str):
-                            continue
-                        cleaned_members.append(name)
-                    if normalized_key in member_sequences:
-                        existing = member_sequences[normalized_key]
-                        for name in cleaned_members:
-                            if name not in existing:
-                                existing.append(name)
-                    else:
-                        member_sequences[normalized_key] = cleaned_members
-
-            if UNGROUPED_TEAM_KEY in member_sequences and not member_sequences[
-                UNGROUPED_TEAM_KEY
-            ]:
-                member_sequences.pop(UNGROUPED_TEAM_KEY, None)
-            if UNGROUPED_TEAM_KEY not in member_sequences:
-                team_sequence = [
-                    team for team in team_sequence if team != UNGROUPED_TEAM_KEY
-                ]
-            return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
+            return OrderPreferences.from_dict(data)
 
         if isinstance(data, list) and all(isinstance(item, str) for item in data):
-            return self._from_legacy_list(data)
+            return OrderPreferences.from_legacy_list(data)
 
         return OrderPreferences.empty()
-
-    def _from_legacy_list(self, items: List[str]) -> OrderPreferences:
-        member_sequences: Dict[str, List[str]] = {}
-        team_sequence: List[str] = []
-        for name in items:
-            team_key = UNGROUPED_TEAM_KEY
-            if name.startswith("[") and "]" in name:
-                prefix, _, remainder = name.partition("]")
-                team_name = prefix[1:]
-                team_key = team_name or UNGROUPED_TEAM_KEY
-                stripped = remainder.strip()
-            else:
-                stripped = name
-            if team_key not in team_sequence:
-                team_sequence.append(team_key)
-            member_sequences.setdefault(team_key, [])
-            if stripped and stripped not in member_sequences[team_key]:
-                member_sequences[team_key].append(stripped)
-        return OrderPreferences(team_sequence=team_sequence, member_sequences=member_sequences)
 
     def save(self, order: List[str], entries: Dict[str, ZipEntry]) -> None:
         preferences = self._build_preferences(order, entries)
@@ -262,13 +296,7 @@ class OrderManager:
 
     def save_member_sequence(self, team_key: str, members: List[str]) -> None:
         normalized_team = _normalize_team_key(team_key)
-        cleaned_members: List[str] = []
-        for member in members:
-            if not isinstance(member, str):
-                continue
-            stripped = member.strip()
-            if stripped and stripped not in cleaned_members:
-                cleaned_members.append(stripped)
+        cleaned_members = _normalize_member_names(members)
 
         with self._lock:
             preferences = self.load_preferences()

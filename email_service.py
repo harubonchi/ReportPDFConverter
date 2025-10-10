@@ -1,3 +1,5 @@
+"""Email utilities for sending the merged PDF results."""
+
 from __future__ import annotations
 
 import os
@@ -8,10 +10,21 @@ from email.utils import formataddr
 from pathlib import Path
 
 
-@dataclass
+def _env_bool(name: str, default: bool) -> bool:
+    """Return a boolean value parsed from an environment variable."""
+
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(slots=True)
 class EmailConfig:
-    sender: str                 # メールアドレス（例: roboken.report.tool@gmail.com）
-    display_name: str           # 表示名（例: ロボ研報告書作成ツール）
+    """Holds SMTP configuration required to deliver emails."""
+
+    sender: str
+    display_name: str
     username: str
     password: str
     smtp_server: str
@@ -20,12 +33,24 @@ class EmailConfig:
 
     @property
     def is_configured(self) -> bool:
-        return all([self.sender, self.username, self.password, self.smtp_server, self.smtp_port])
+        """Return ``True`` when the configuration is sufficient for delivery."""
+
+        return all(
+            [
+                self.sender,
+                self.username,
+                self.password,
+                self.smtp_server,
+                self.smtp_port,
+            ]
+        )
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
+        """Build a configuration instance from environment variables."""
+
         sender = os.getenv("EMAIL_SENDER", "")
-        display_name = os.getenv("EMAIL_DISPLAY_NAME", "ロボ研報告書作成ツール")  # デフォルトをここで設定
+        display_name = os.getenv("EMAIL_DISPLAY_NAME", "ロボ研報告書作成ツール")
         username = os.getenv("EMAIL_USERNAME", sender)
         password = os.getenv("EMAIL_PASSWORD", "")
         smtp_server = os.getenv("EMAIL_SMTP_SERVER", "")
@@ -35,8 +60,7 @@ class EmailConfig:
         except (TypeError, ValueError):
             smtp_port = 0
 
-        use_tls_value = os.getenv("EMAIL_USE_TLS", "true")
-        use_tls = str(use_tls_value).strip().lower() in {"1", "true", "yes", "on"}
+        use_tls = _env_bool("EMAIL_USE_TLS", default=True)
         return cls(
             sender=sender,
             display_name=display_name,
@@ -56,17 +80,17 @@ def send_email_with_attachment(
     body: str,
     attachment_path: Path,
 ) -> None:
+    """Send an email with ``attachment_path`` attached as a PDF document."""
+
     if not config.is_configured:
         raise RuntimeError("Email configuration is incomplete.")
 
     message = EmailMessage()
     message["Subject"] = subject
-    # ✅ 表示名付きのFromヘッダを生成
     message["From"] = formataddr((config.display_name, config.sender))
     message["To"] = recipient
     message.set_content(body)
 
-    # 添付ファイルを追加
     with attachment_path.open("rb") as attachment_file:
         file_data = attachment_file.read()
     message.add_attachment(
@@ -76,7 +100,6 @@ def send_email_with_attachment(
         filename=attachment_path.name,
     )
 
-    # SMTP接続と送信
     with smtplib.SMTP(config.smtp_server, config.smtp_port) as server:
         if config.use_tls:
             server.starttls()
