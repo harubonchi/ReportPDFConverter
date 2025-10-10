@@ -423,6 +423,7 @@ class JobState:
     conversion_order: List[str] = field(default_factory=list)
     conversion_statuses: Dict[str, str] = field(default_factory=dict)
     conversion_threads: Dict[str, int] = field(default_factory=dict)
+    show_conversion_progress: bool = False
 
     def to_dict(self) -> Dict[str, object]:
         elapsed_seconds: float | None = None
@@ -462,6 +463,7 @@ class JobState:
                 }
                 for name in self.conversion_order
             ],
+            "show_conversion_progress": self.show_conversion_progress,
         }
 
 
@@ -782,6 +784,7 @@ def _initialize_conversion_progress(job_id: str, entries: List[ZipEntry]) -> Non
         job.conversion_threads = {
             entry.display_name: index + 1 for index, entry in enumerate(entries)
         }
+        job.show_conversion_progress = True
         job.updated_at = now
 
 
@@ -808,6 +811,7 @@ def _update_job(
     progress_increment: int | None = None,
     progress_total: int | None = None,
     email_delivery_status: str | None = None,
+    show_conversion_progress: bool | None = None,
 ) -> None:
     with jobs_lock:
         job = jobs.get(job_id)
@@ -832,12 +836,17 @@ def _update_job(
                 job.progress_current = job.progress_total
         if email_delivery_status is not None:
             job.email_delivery_status = email_delivery_status
+        if show_conversion_progress is not None:
+            job.show_conversion_progress = show_conversion_progress
         if progress_increment:
             job.progress_current += progress_increment
             if job.progress_total > 0:
                 job.progress_current = min(job.progress_current, job.progress_total)
         if status == "completed" and job.progress_total > 0:
             job.progress_current = job.progress_total
+            job.show_conversion_progress = False
+        if status == "failed":
+            job.show_conversion_progress = False
         job.updated_at = now
 
 
@@ -880,12 +889,12 @@ def _process_job(job_id: str) -> None:
         report_number = _determine_report_number(job.zip_original_name, ordered_entries)
         job.report_number = report_number
 
-        _update_job(job_id, message="PDFファイルを並列で変換しています…")
+        _update_job(job_id, message="WordファイルをPDFに変換中・・・")
 
         pdf_paths: List[Path | None] = [None] * len(ordered_entries)
 
         def _convert_entry(index: int, entry: ZipEntry) -> tuple[int, Path]:
-            _update_job(job_id, message=f"{entry.display_name} をPDFに変換しています…")
+            _update_job(job_id, message="WordファイルをPDFに変換中・・・")
             _update_conversion_status(job_id, entry.display_name, "running")
             source_path = extract_dir / entry.archive_name
             if not source_path.exists():
@@ -934,6 +943,7 @@ def _process_job(job_id: str) -> None:
             message="PDFの結合が完了しました。",
             merged_pdf=merged_path,
             email_delivery_status="sending" if should_send_email else "",
+            show_conversion_progress=False,
         )
 
         if should_send_email:
@@ -959,7 +969,12 @@ def _process_job(job_id: str) -> None:
         else:
             _schedule_delayed_cleanup()
     except Exception as exc:  # noqa: BLE001
-        _update_job(job_id, status="failed", message=f"エラーが発生しました: {exc}")
+        _update_job(
+            job_id,
+            status="failed",
+            message=f"エラーが発生しました: {exc}",
+            show_conversion_progress=False,
+        )
     finally:
         job.zip_path.unlink(missing_ok=True)
 

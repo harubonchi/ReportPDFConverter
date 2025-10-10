@@ -402,14 +402,18 @@
         });
       }
 
-      function updateConversionProgress(entries) {
+      function updateConversionProgress(entries, shouldShow) {
         if (!conversionSection || !conversionGrid) {
+          return;
+        }
+        conversionGrid.innerHTML = "";
+        if (!shouldShow) {
+          conversionSection.hidden = true;
           return;
         }
         const items = Array.isArray(entries)
           ? entries.filter((entry) => entry && typeof entry === "object")
           : [];
-        conversionGrid.innerHTML = "";
         if (!items.length) {
           conversionSection.hidden = true;
           return;
@@ -497,7 +501,8 @@
           }
           let metaText = updatedAtText;
 
-          updateConversionProgress(data.conversion_progress);
+          const shouldShowConversion = Boolean(data.show_conversion_progress);
+          updateConversionProgress(data.conversion_progress, shouldShowConversion);
 
           if (!teamOptionsInitialized && data.team_options) {
             populateTeamOptions(data.team_options);
