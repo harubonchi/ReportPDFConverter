@@ -61,14 +61,20 @@ class ServerCtl:
 
     @staticmethod
     def _port_free(host, port) -> bool:
+        # 0.0.0.0 での待ち受け可否を確認するには「bind できるか」を見るのが確実
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            s.settimeout(0.2)
-            return s.connect_ex((host, port)) != 0
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host, port))
+            except OSError:
+                return False
+            return True
 
     @staticmethod
     def _find_free_port(host) -> int:
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-            s.bind((host, 0))
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((host, 0))  # OS に空きポートを選ばせる
             return s.getsockname()[1]
 
 
@@ -158,7 +164,7 @@ def main():
     def do_start():
         ctl.start()
         tray.setIcon(make_dot_icon(on=True))
-        tray.setToolTip(f"ロボ研報告書作成サーバ (ON) http://{ctl.host}:{ctl.port}")
+        tray.setToolTip(f"ロボ研報告書作成サーバ (ON) http://127.0.0.1:{ctl.port}")
 
     def do_stop():
         ctl.stop()
@@ -168,7 +174,7 @@ def main():
     def do_open():
         if not ctl.is_running():
             do_start()
-        webbrowser.open(f"http://{ctl.host}:{ctl.port}/")
+        webbrowser.open(f"http://127.0.0.1:{ctl.port}/")
 
     def do_exit():
         do_stop()
