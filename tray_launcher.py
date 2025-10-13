@@ -18,7 +18,7 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
-HOST = "127.0.0.1"
+HOST = "0.0.0.0"
 PORT = 80  # 既存UIの想定ポート。競合なら空きポートへ回避
 
 
