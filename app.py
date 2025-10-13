@@ -448,7 +448,7 @@ class JobState:
 app = Flask(__name__)
 app.secret_key = "pdf-report-converter"
 
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=1)
 jobs: Dict[str, JobState] = {}
 jobs_lock = threading.Lock()
 upload_sessions: Dict[str, Dict[str, object]] = {}
@@ -737,7 +737,7 @@ def _create_job_state(
         id=job_id,
         email=email,
         status="queued",
-        message="処理を待機しています。",
+        message="他のユーザの処理が終わるまで待機しています。",
         created_at=now,
         updated_at=now,
         order=order,
@@ -1261,8 +1261,18 @@ def job_status(job_id: str) -> Response:
     with jobs_lock:
         job = jobs.get(job_id)
         if not job:
-            return jsonify({"error": "ジョブが見つかりません。"}), 404
-        return jsonify(job.to_dict())
+            resp = jsonify({"error": "ジョブが見つかりません。"})
+            resp.status_code = 404
+        else:
+            resp = jsonify(job.to_dict())
+
+    # キャッシュやバッファリングによる応答停止を防ぐためのヘッダ
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    resp.headers["X-Accel-Buffering"] = "no"  # リバースプロキシ対策（使っていれば有効）
+    resp.headers["Connection"] = "close"       # Keep-Alive 停滞対策
+    return resp
 
 def get_app():
     """Trayランチャー等からインポートするための取り出し口"""

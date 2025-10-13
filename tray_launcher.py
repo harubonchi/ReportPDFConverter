@@ -43,7 +43,8 @@ class ServerCtl:
             if not self._port_free(self.host, self.port):
                 self.port = self._find_free_port(self.host)
 
-            self._server = make_server(self.host, self.port, self.app)
+            # マルチスレッドでの同時接続処理を明示有効化
+            self._server = make_server(self.host, self.port, self.app, threaded=True)
             self._thread = threading.Thread(
                 target=self._server.serve_forever, daemon=True
             )

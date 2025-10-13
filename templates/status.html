@@ -462,8 +462,13 @@
       }
 
       async function refreshStatus() {
+        // リクエストが応答しないまま固まるのを防ぐため、明示的なタイムアウトとキャッシュ無効化を行う
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒で中断
+        // キャッシュを完全に避けるためクエリに時刻を付与し、fetch側も no-store を指定
+        const url = `${statusUrl}?t=${Date.now()}`;
         try {
-          const response = await fetch(statusUrl);
+          const response = await fetch(url, { cache: "no-store", signal: controller.signal });
           if (!response.ok) {
             throw new Error("ステータスを取得できませんでした");
           }
@@ -580,7 +585,7 @@
           }
 
           if (shouldStopPolling || data.status === "failed") {
-            return;
+            return; // 意図的停止（完了/失敗）
           }
         } catch (error) {
           const statusElement = document.getElementById("status");
@@ -592,8 +597,10 @@
             messageElement.textContent = String(error);
             messageElement.hidden = false;
           }
+        } finally {
+          clearTimeout(timeoutId);
         }
-        setTimeout(refreshStatus, 100);
+        setTimeout(refreshStatus, 100); // 100ms間隔を維持
       }
 
       refreshStatus();
