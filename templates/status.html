@@ -382,18 +382,45 @@
       if (nameInput) {
         nameInput.addEventListener("input", updateEmailText);
       }
+      // クリップボードへのコピー（HTTPS以外やモバイルでも動くフォールバック付き）
+      async function copyTextToClipboard(text) {
+        // 優先: SecureContext での Clipboard API
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+        // フォールバック: 一時的な textarea を使った execCommand('copy')
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          // 画面に見えないように配置
+          ta.style.position = 'fixed';
+          ta.style.top = '-1000px';
+          ta.style.left = '-1000px';
+          ta.setAttribute('readonly', '');
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        } catch (_) {
+          return false;
+        }
+      }
+
       if (copyButton) {
         copyButton.addEventListener("click", async () => {
           if (!emailTextArea || !emailTextArea.value) {
             return;
           }
-          try {
-            await navigator.clipboard.writeText(emailTextArea.value);
+          const ok = await copyTextToClipboard(emailTextArea.value);
+          if (ok) {
             if (copyFeedback) {
               copyFeedback.style.color = "#2b8a3e";
               copyFeedback.textContent = "テンプレートをコピーしました。";
             }
-          } catch (error) {
+          } else {
             if (copyFeedback) {
               copyFeedback.textContent = "クリップボードへのコピーに失敗しました。";
               copyFeedback.style.color = "#c92a2a";
