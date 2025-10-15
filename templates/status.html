@@ -488,10 +488,18 @@
         conversionSection.hidden = false;
       }
 
+      let isRefreshing = false;
+      let consecutiveNetworkErrors = 0;
+
       async function refreshStatus() {
+        if (isRefreshing) {
+          // 多重起動を避ける（積み上がり防止）
+          return;
+        }
+        isRefreshing = true;
         // リクエストが応答しないまま固まるのを防ぐため、明示的なタイムアウトとキャッシュ無効化を行う
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5秒で中断
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒で中断
         // キャッシュを完全に避けるためクエリに時刻を付与し、fetch側も no-store を指定
         const url = `${statusUrl}?t=${Date.now()}`;
         try {
@@ -611,23 +619,28 @@
             }
           }
 
+          consecutiveNetworkErrors = 0; // 正常応答が返ればエラーカウンタをリセット
           if (shouldStopPolling || data.status === "failed") {
             return; // 意図的停止（完了/失敗）
           }
         } catch (error) {
-          const statusElement = document.getElementById("status");
-          const messageElement = document.getElementById("message");
-          if (statusElement) {
-            statusElement.textContent = "エラー";
-          }
-          if (messageElement) {
-            messageElement.textContent = String(error);
-            messageElement.hidden = false;
+          // AbortError は想定内（タイムアウト再試行）なのでユーザーに見せない
+          if (error && (error.name === 'AbortError' || String(error).includes('AbortError'))) {
+            // 何も表示しない（静かに再試行）
+          } else {
+            // ネットワーク不調等の場合は穏当なメッセージに留める
+            consecutiveNetworkErrors += 1;
+            const messageElement = document.getElementById("message");
+            if (messageElement) {
+              messageElement.textContent = "接続が不安定です。再試行中…";
+              messageElement.hidden = false;
+            }
           }
         } finally {
           clearTimeout(timeoutId);
+          isRefreshing = false;
         }
-        setTimeout(refreshStatus, 100); // 100ms間隔を維持
+        setTimeout(refreshStatus, 500); // 500ms間隔（0.5秒）に変更
       }
 
       refreshStatus();
