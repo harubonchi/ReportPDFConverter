@@ -158,6 +158,84 @@ def _schedule_delayed_cleanup(delay_seconds: int = 600) -> None:
 _cleanup_data_directories()
 
 
+def _extract_zip_smart(zip_path: Path, extract_to: Path) -> None:
+    """ZIPのファイル名エンコードを判定して展開する。
+
+    仕様上、UTF-8フラグが立っているエントリはUTF-8として正しく復号される。
+    フラグが立っていない場合、標準では cp437 とみなされるが、日本語環境では
+    cp932（Shift_JIS）の場合が多く、macOS 由来のZIPでは UTF-8 が使われることがある。
+
+    本関数では以下の順で安全に試行する：
+      1) ZIP内にUTF-8フラグが一つでもあれば、デフォルトの動作で展開
+      2) なければ create_system を見て macOS/Unix 由来が多ければ UTF-8、
+         Windows/MS-DOS 由来が多ければ CP932 を優先
+      3) 失敗時は UTF-8 → CP932 の順でフォールバック
+    """
+
+    def _has_utf8_flag(zf: zipfile.ZipFile) -> bool:
+        try:
+            for info in zf.infolist():
+                if getattr(info, "flag_bits", 0) & 0x800:  # UTF-8
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _count_platforms(zf: zipfile.ZipFile) -> tuple[int, int]:
+        win = 0
+        unix_like = 0
+        try:
+            for info in zf.infolist():
+                # 0=MS-DOS/Windows, 3=Unix（macOS Finder も 3）
+                if getattr(info, "create_system", 0) == 0:
+                    win += 1
+                else:
+                    unix_like += 1
+        except Exception:
+            pass
+        return win, unix_like
+
+    def _extract_with_encoding(encoding: str | None) -> bool:
+        try:
+            if encoding is None:
+                with zipfile.ZipFile(zip_path) as zf:
+                    zf.extractall(path=extract_to)
+            else:
+                with zipfile.ZipFile(zip_path, metadata_encoding=encoding) as zf:
+                    zf.extractall(path=extract_to)
+            return True
+        except TypeError:
+            # 古いPythonで metadata_encoding 非対応の場合はデフォルトで展開
+            with zipfile.ZipFile(zip_path) as zf:
+                zf.extractall(path=extract_to)
+            return True
+        except Exception:
+            return False
+
+    # まずUTF-8フラグの有無を調べる
+    try:
+        with zipfile.ZipFile(zip_path) as zf_probe:
+            if _has_utf8_flag(zf_probe):
+                _extract_with_encoding(None)
+                return
+            win, unix_like = _count_platforms(zf_probe)
+    except Exception:
+        # 調査に失敗しても通常展開にフォールバック
+        _extract_with_encoding(None)
+        return
+
+    # 推定方針: Unix系が多ければ UTF-8、そうでなければ CP932
+    primary = "utf-8" if unix_like > win else "cp932"
+    secondary = "cp932" if primary == "utf-8" else "utf-8"
+
+    if _extract_with_encoding(primary):
+        return
+    if _extract_with_encoding(secondary):
+        return
+    # 最後の保険
+    _extract_with_encoding(None)
+
+
 @dataclass
 class ZipEntry:
     identifier: str
@@ -842,8 +920,7 @@ def _process_job(job_id: str) -> None:
         extract_dir.mkdir(parents=True, exist_ok=True)
         pdf_dir.mkdir(parents=True, exist_ok=True)
 
-        with zipfile.ZipFile(job.zip_path) as archive:
-            archive.extractall(path=extract_dir)
+        _extract_zip_smart(job.zip_path, extract_dir)
 
         _apply_team_prefixes(extract_dir, job.entries)
 
