@@ -164,17 +164,26 @@ def _get_printer_capabilities(printer_name: str) -> Dict[str, bool]:
     if not win32print:
         return capabilities
 
-    # Prefer DeviceCapabilities (driver-reported support).
+    # Prefer DeviceCapabilities (driver-reported support). Use port/driver info when available.
     try:
         if win32con:
+            ph = win32print.OpenPrinter(printer_name)
+            try:
+                info2 = win32print.GetPrinter(ph, 2)
+            finally:
+                win32print.ClosePrinter(ph)
+
+            port_name = info2.get("pPortName") if isinstance(info2, dict) else None
+            driver_name = info2.get("pDriverName") if isinstance(info2, dict) else None
+
             color_cap = win32print.DeviceCapabilities(
-                printer_name, None, win32con.DC_COLORDEVICE, None
+                driver_name or printer_name, port_name, win32con.DC_COLORDEVICE, None
             )
             duplex_cap = win32print.DeviceCapabilities(
-                printer_name, None, win32con.DC_DUPLEX, None
+                driver_name or printer_name, port_name, win32con.DC_DUPLEX, None
             )
-            capabilities["color_supported"] = bool(color_cap)
-            capabilities["duplex_supported"] = bool(duplex_cap)
+            capabilities["color_supported"] = bool(color_cap and color_cap != -1)
+            capabilities["duplex_supported"] = bool(duplex_cap and duplex_cap != -1)
     except Exception:
         pass
 
@@ -195,6 +204,7 @@ def _get_printer_capabilities(printer_name: str) -> Dict[str, bool]:
             if not capabilities["duplex_supported"]:
                 try:
                     duplex_value = getattr(devmode, "Duplex", getattr(devmode, "dmDuplex", 0))
+                    # Some drivers report 1 for simplex, 2 for long-edge, 3 for short-edge.
                     capabilities["duplex_supported"] = duplex_value >= 2
                 except Exception:
                     pass
