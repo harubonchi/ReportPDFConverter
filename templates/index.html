@@ -89,6 +89,56 @@
         color: #64748b;
         opacity: 0.85;
       }
+      .upload-status {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #f8fafc;
+        display: none;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .progress-track {
+        position: relative;
+        width: 100%;
+        height: 12px;
+        background: #e2e8f0;
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .progress-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #0b7285, #15aabf);
+        transition: width 0.1s ease-out;
+      }
+      .upload-text {
+        min-width: 140px;
+        font-weight: 600;
+        color: #0b7285;
+      }
+      .upload-percent {
+        font-family: monospace;
+        min-width: 4ch;
+        text-align: right;
+      }
+      .spinner {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 3px solid #cbd5e1;
+        border-top-color: #0b7285;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
     </style>
   </head>
   <body>
@@ -118,5 +168,90 @@
       <button type="submit">アップロードして順番を確認</button>
     </form>
 
+    <div id="upload-status" class="upload-status" role="status" aria-live="polite">
+      <div class="spinner" aria-hidden="true"></div>
+      <div class="upload-text">アップロード中…</div>
+      <div class="progress-track" aria-hidden="true">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+      <div id="upload-percent" class="upload-percent">--%</div>
+    </div>
+
+    <script>
+      const form = document.querySelector("form");
+      const fileInput = document.getElementById("zip_file");
+      const uploadStatus = document.getElementById("upload-status");
+      const progressBar = document.getElementById("progress-bar");
+      const uploadPercent = document.getElementById("upload-percent");
+
+      function showStatus() {
+        if (uploadStatus) {
+          uploadStatus.style.display = "flex";
+        }
+      }
+      function hideStatus() {
+        if (uploadStatus) {
+          uploadStatus.style.display = "none";
+        }
+      }
+      function updateProgress(percent) {
+        const value = Math.max(0, Math.min(100, Math.round(percent)));
+        if (progressBar) {
+          progressBar.style.width = `${value}%`;
+        }
+        if (uploadPercent) {
+          uploadPercent.textContent = `${value}%`;
+        }
+      }
+
+      if (form) {
+        form.addEventListener("submit", (event) => {
+          const file = fileInput ? fileInput.files[0] : null;
+          if (!file) {
+            return;
+          }
+          event.preventDefault();
+          showStatus();
+          updateProgress(0);
+
+          const formData = new FormData(form);
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", form.action, true);
+          xhr.responseType = "document";
+
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              const percent = (e.loaded / e.total) * 100;
+              updateProgress(percent);
+            } else {
+              uploadPercent.textContent = "送信中…";
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              const doc = xhr.response;
+              if (doc) {
+                document.open();
+                document.write(doc.documentElement.outerHTML);
+                document.close();
+              } else {
+                window.location.href = xhr.responseURL || form.action;
+              }
+            } else {
+              alert("アップロードに失敗しました。ネットワークを確認して再試行してください。");
+              hideStatus();
+            }
+          };
+
+          xhr.onerror = () => {
+            alert("アップロード中にエラーが発生しました。ネットワークを確認してください。");
+            hideStatus();
+          };
+
+          xhr.send(formData);
+        });
+      }
+    </script>
   </body>
 </html>
