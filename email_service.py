@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import os
+import sys
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
@@ -17,6 +18,18 @@ from googleapiclient.discovery import build
 
 # Gmail送信のみ（最小権限）
 SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
+
+
+def get_app_dir() -> Path:
+    """
+    Return the directory where the application is located.
+
+    - When running as an exe (PyInstaller): directory of the executable
+    - When running as a Python script: directory of this file
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parent
 
 
 @dataclass(slots=True)
@@ -34,16 +47,25 @@ class EmailConfig:
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
+        app_dir = get_app_dir()
         return cls(
-            sender=os.getenv("EMAIL_SENDER", ""),
+            sender=os.getenv(
+                "EMAIL_SENDER", "roboken.report.tool@gmail.com"
+            ),
             display_name=os.getenv(
                 "EMAIL_DISPLAY_NAME", "ロボ研報告書作成ツール"
             ),
             credentials_json=Path(
-                os.getenv("GMAIL_CREDENTIALS_JSON", "credentials.json")
+                os.getenv(
+                    "GMAIL_CREDENTIALS_JSON",
+                    app_dir / "credentials.json",
+                )
             ),
             token_json=Path(
-                os.getenv("GMAIL_TOKEN_JSON", "token.json")
+                os.getenv(
+                    "GMAIL_TOKEN_JSON",
+                    app_dir / "token.json",
+                )
             ),
         )
 
