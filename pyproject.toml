@@ -7,8 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "dotenv>=0.9.9",
     "flask>=3.1.2",
+    "google-api-python-client>=2.187.0",
+    "google-auth>=2.43.0",
+    "google-auth-oauthlib>=1.2.2",
     "pypdf2>=3.0.1",
     "pyqt6>=6.10.0",
+    "pywin32>=311",
     "tzdata>=2025.2",
     "werkzeug>=3.1.3",
 ]

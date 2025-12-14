@@ -1,75 +1,75 @@
-"""Email utilities for sending the merged PDF results."""
+"""Email utilities for sending the merged PDF results via Gmail API."""
 
 from __future__ import annotations
 
+import base64
 import os
-import smtplib
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr
 from pathlib import Path
 
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
 
-def _env_bool(name: str, default: bool) -> bool:
-    """Return a boolean value parsed from an environment variable."""
 
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
+# Gmail送信のみ（最小権限）
+SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 
 @dataclass(slots=True)
 class EmailConfig:
-    """Holds SMTP configuration required to deliver emails."""
+    """Holds Gmail API configuration required to deliver emails."""
 
     sender: str
     display_name: str
-    username: str
-    password: str
-    smtp_server: str
-    smtp_port: int
-    use_tls: bool = True
+    credentials_json: Path
+    token_json: Path
 
     @property
     def is_configured(self) -> bool:
-        """Return ``True`` when the configuration is sufficient for delivery."""
-
-        return all(
-            [
-                self.sender,
-                self.username,
-                self.password,
-                self.smtp_server,
-                self.smtp_port,
-            ]
-        )
+        return self.sender and self.credentials_json.exists()
 
     @classmethod
     def from_env(cls) -> "EmailConfig":
-        """Build a configuration instance from environment variables."""
-
-        sender = os.getenv("EMAIL_SENDER", "")
-        display_name = os.getenv("EMAIL_DISPLAY_NAME", "ロボ研報告書作成ツール")
-        username = os.getenv("EMAIL_USERNAME", sender)
-        password = os.getenv("EMAIL_PASSWORD", "")
-        smtp_server = os.getenv("EMAIL_SMTP_SERVER", "")
-
-        try:
-            smtp_port = int(os.getenv("EMAIL_SMTP_PORT", ""))
-        except (TypeError, ValueError):
-            smtp_port = 0
-
-        use_tls = _env_bool("EMAIL_USE_TLS", default=True)
         return cls(
-            sender=sender,
-            display_name=display_name,
-            username=username,
-            password=password,
-            smtp_server=smtp_server,
-            smtp_port=smtp_port,
-            use_tls=use_tls,
+            sender=os.getenv("EMAIL_SENDER", ""),
+            display_name=os.getenv(
+                "EMAIL_DISPLAY_NAME", "ロボ研報告書作成ツール"
+            ),
+            credentials_json=Path(
+                os.getenv("GMAIL_CREDENTIALS_JSON", "credentials.json")
+            ),
+            token_json=Path(
+                os.getenv("GMAIL_TOKEN_JSON", "token.json")
+            ),
         )
+
+
+def _get_gmail_service(config: EmailConfig):
+    creds: Credentials | None = None
+
+    if config.token_json.exists():
+        creds = Credentials.from_authorized_user_file(
+            config.token_json, SCOPES
+        )
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                config.credentials_json, SCOPES
+            )
+            creds = flow.run_local_server(port=0)
+
+        config.token_json.write_text(
+            creds.to_json(), encoding="utf-8"
+        )
+
+    return build("gmail", "v1", credentials=creds)
 
 
 def send_email_with_attachment(
@@ -80,10 +80,12 @@ def send_email_with_attachment(
     body: str,
     attachment_path: Path,
 ) -> None:
-    """Send an email with ``attachment_path`` attached as a PDF document."""
+    """Send an email with ``attachment_path`` attached as a PDF document via Gmail API."""
 
     if not config.is_configured:
         raise RuntimeError("Email configuration is incomplete.")
+
+    service = _get_gmail_service(config)
 
     message = EmailMessage()
     message["Subject"] = subject
@@ -92,16 +94,18 @@ def send_email_with_attachment(
     message.set_content(body)
 
     with attachment_path.open("rb") as attachment_file:
-        file_data = attachment_file.read()
-    message.add_attachment(
-        file_data,
-        maintype="application",
-        subtype="pdf",
-        filename=attachment_path.name,
-    )
+        message.add_attachment(
+            attachment_file.read(),
+            maintype="application",
+            subtype="pdf",
+            filename=attachment_path.name,
+        )
 
-    with smtplib.SMTP(config.smtp_server, config.smtp_port) as server:
-        if config.use_tls:
-            server.starttls()
-        server.login(config.username, config.password)
-        server.send_message(message)
+    encoded_message = base64.urlsafe_b64encode(
+        message.as_bytes()
+    ).decode("utf-8")
+
+    service.users().messages().send(
+        userId="me",
+        body={"raw": encoded_message},
+    ).execute()
