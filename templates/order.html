@@ -96,6 +96,9 @@
         font-size: 0.85rem;
         cursor: pointer;
       }
+      .team-actions button.danger {
+        background: #fa5252;
+      }
       .team-actions button.secondary {
         background: #495057;
       }
@@ -190,7 +193,7 @@
     <div class="instructions">
       <p>
         上下ボタンで班単位、個人単位の並び替えができます。発表の順番に合わせて調整してください。<br>
-        デフォルト順でソートされています。不要なファイルは「削除」ボタンで除外できます。
+        デフォルト順でソートされています。不要なファイルは「削除」ボタンで除外できます。班ごと不要な場合は班ヘッダーの「削除」で一括除外できます。
       </p>
     </div>
 
@@ -210,6 +213,7 @@
                 <div class="team-actions">
                   <button type="button" class="secondary team-move-up" aria-label="班を上に移動">▲</button>
                   <button type="button" class="secondary team-move-down" aria-label="班を下に移動">▼</button>
+                  <button type="button" class="danger team-remove" aria-label="班を一覧から削除">削除</button>
                 </div>
               </div>
               <ul class="document-list">
@@ -493,6 +497,15 @@
           handleTeamMove(teamBlock, direction);
           return;
         }
+        if (target.classList.contains("team-remove")) {
+          const teamBlock = target.closest(".team-block");
+          if (!teamBlock) {
+            return;
+          }
+          teamBlock.remove();
+          updateOrderInput();
+          return;
+        }
         const item = target.closest(".document-item");
         const block = target.closest(".team-block");
         if (!item || !block) {
@@ -543,8 +556,14 @@
           downButton.className = "secondary team-move-down";
           downButton.setAttribute("aria-label", "班を下に移動");
           downButton.textContent = "▼";
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "danger team-remove";
+          removeButton.setAttribute("aria-label", "班を一覧から削除");
+          removeButton.textContent = "削除";
           actions.appendChild(upButton);
           actions.appendChild(downButton);
+          actions.appendChild(removeButton);
           header.appendChild(actions);
           block.appendChild(header);
 

@@ -210,6 +210,57 @@
         font-size: 0.9rem;
         color: #2b8a3e;
       }
+      .printer-section {
+        margin-top: 1.5rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 1.25rem 1.5rem;
+      }
+      .printer-section h2 {
+        margin-top: 0;
+        color: #0b7285;
+      }
+      .printer-description {
+        margin: 0.25rem 0 0.85rem 0;
+        color: #475569;
+      }
+      .printer-controls {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .printer-controls select {
+        min-width: 240px;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 1rem;
+      }
+      .printer-controls button {
+        background: #0b7285;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 0.55rem 0.9rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+      .printer-controls button.secondary {
+        background: #495057;
+      }
+      .printer-feedback {
+        margin-top: 0.6rem;
+        color: #1f2937;
+        min-height: 1.4rem;
+      }
+      .printer-feedback.error {
+        color: #c92a2a;
+      }
+      .printer-feedback.success {
+        color: #2b8a3e;
+      }
       @media (max-width: 640px) {
         .template-controls {
           flex-direction: column;
@@ -243,6 +294,19 @@
           hidden
         ></a>
       </div>
+    </div>
+
+    <div id="printer-section" class="printer-section" hidden>
+      <h2>プリンタで直接印刷</h2>
+      <p class="printer-description">
+        サーバに登録されているプリンタから選択し、生成したPDFを印刷します。
+      </p>
+      <div class="printer-controls">
+        <select id="printer-select" aria-label="プリンタを選択"></select>
+        <button type="button" id="refresh-printers" class="secondary">再読み込み</button>
+        <button type="button" id="print-button">印刷</button>
+      </div>
+      <div id="printer-feedback" class="printer-feedback" role="status" aria-live="polite"></div>
     </div>
 
     <section id="conversion-section" class="conversion-section" hidden>
@@ -281,6 +345,7 @@
     </div>
 
     <script>
+      const jobId = "{{ job_id }}";
       const statusUrl = "{{ url_for('job_status', job_id=job_id) }}";
       const statusLabels = {
         queued: "待機中",
@@ -288,6 +353,14 @@
         completed: "完了",
         failed: "失敗",
       };
+      const printerSection = document.getElementById("printer-section");
+      const printerSelect = document.getElementById("printer-select");
+      const refreshPrintersButton = document.getElementById("refresh-printers");
+      const printButton = document.getElementById("print-button");
+      const printerFeedback = document.getElementById("printer-feedback");
+      let printersLoaded = false;
+      let printersLoading = false;
+      let lastPrinters = [];
       const emailSection = document.getElementById("email-template-section");
       const teamSelect = document.getElementById("team-select");
       const gradeSelect = document.getElementById("grade-select");
@@ -427,6 +500,185 @@
             }
           }
         });
+      }
+
+      function setPrinterFeedback(message, type = "") {
+        if (!printerFeedback) {
+          return;
+        }
+        printerFeedback.textContent = message || "";
+        printerFeedback.classList.remove("error", "success");
+        if (type) {
+          printerFeedback.classList.add(type);
+        }
+      }
+
+      function populatePrinters(printers) {
+        if (!printerSelect) {
+          return;
+        }
+        printerSelect.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "（プリンタを選択）";
+        printerSelect.appendChild(placeholder);
+
+        const list = Array.isArray(printers) ? printers : [];
+        lastPrinters = list;
+        list.forEach((printer) => {
+          const name = typeof printer?.name === "string" ? printer.name.trim() : "";
+          if (!name) {
+            return;
+          }
+          const colorSupported = Boolean(printer.color_supported);
+          const duplexSupported = Boolean(printer.duplex_supported);
+          const notes = [];
+          if (!colorSupported) {
+            notes.push("白黒のみ");
+          }
+          if (!duplexSupported) {
+            notes.push("片面のみ");
+          }
+          const recommended = colorSupported && duplexSupported;
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = recommended
+            ? `${name}（推奨：カラー・両面）`
+            : notes.length
+              ? `${name}（${notes.join("・")}）`
+              : name;
+          option.dataset.colorSupported = String(colorSupported);
+          option.dataset.duplexSupported = String(duplexSupported);
+          option.dataset.warnings = Array.isArray(printer.warnings)
+            ? printer.warnings.join(" / ")
+            : "";
+          if (printer.is_default) {
+            option.selected = true;
+          }
+          printerSelect.appendChild(option);
+        });
+        printersLoaded = true;
+        if (!printerSelect.value && printerSelect.options.length > 1) {
+          printerSelect.selectedIndex = 1;
+        }
+        updatePrinterSelectionNote();
+      }
+
+      async function fetchPrinters(force = false) {
+        if (printersLoading || (!force && printersLoaded)) {
+          return;
+        }
+        printersLoading = true;
+        setPrinterFeedback("プリンタを読み込み中です…", "");
+        try {
+          const response = await fetch("{{ url_for('api_printers') }}", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`Failed to load printers (${response.status})`);
+          }
+          const data = await response.json();
+          populatePrinters(data?.printers || []);
+          if (!data?.printers || data.printers.length === 0) {
+            setPrinterFeedback(
+              "利用可能なプリンタが見つかりませんでした（Windows標準の仮想プリンタは除外されています）。",
+              "error"
+            );
+          } else {
+            setPrinterFeedback("", "");
+          }
+        } catch (error) {
+          setPrinterFeedback("プリンタの取得に失敗しました。再読み込みを試してください。", "error");
+        } finally {
+          printersLoading = false;
+        }
+      }
+
+      function showPrinterSection(shouldShow) {
+        if (!printerSection) {
+          return;
+        }
+        printerSection.hidden = !shouldShow;
+        if (shouldShow && !printersLoaded && !printersLoading) {
+          fetchPrinters(true);
+        }
+        if (!shouldShow) {
+          setPrinterFeedback("", "");
+        }
+      }
+
+      function updatePrinterSelectionNote() {
+        if (!printerSelect || !printerFeedback) {
+          return;
+        }
+        const selected = printerSelect.selectedOptions
+          ? printerSelect.selectedOptions[0]
+          : null;
+        if (!selected || !selected.value) {
+          setPrinterFeedback("プリンタを選択してください。", "error");
+          return;
+        }
+        const colorSupported = selected.dataset.colorSupported === "true";
+        const duplexSupported = selected.dataset.duplexSupported === "true";
+        const warnings = selected.dataset.warnings || "";
+        if (!colorSupported || !duplexSupported) {
+          const messages = [];
+          if (!colorSupported) {
+            messages.push("カラー非対応: 白黒で印刷されます。");
+          }
+          if (!duplexSupported) {
+            messages.push("両面非対応: 片面印刷になります。");
+          }
+          setPrinterFeedback(messages.join(" "), "error");
+        } else {
+          setPrinterFeedback("カラー・両面（長辺とじ）で印刷できます。", "success");
+        }
+        if (warnings) {
+          setPrinterFeedback(warnings, "error");
+        }
+      }
+
+      async function submitPrintRequest() {
+        if (!printButton || !printerSelect) {
+          return;
+        }
+        const printerName = printerSelect.value || "";
+        if (!printerName) {
+          setPrinterFeedback("プリンタを選択してください。", "error");
+          return;
+        }
+        setPrinterFeedback("印刷要求を送信しています…", "");
+        printButton.disabled = true;
+        try {
+          const response = await fetch(`/print/${encodeURIComponent(jobId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ printer_name: printerName }),
+          });
+          const data = await response.json();
+          if (!response.ok || (data && data.error)) {
+            const message = (data && data.error) || "印刷に失敗しました。";
+            setPrinterFeedback(message, "error");
+            return;
+          }
+          setPrinterFeedback(`「${data.printer || printerName}」に印刷を送信しました。`, "success");
+          updatePrinterSelectionNote();
+        } catch (error) {
+          setPrinterFeedback("印刷の送信に失敗しました。接続を確認してください。", "error");
+        } finally {
+          printButton.disabled = false;
+        }
+      }
+
+      if (printButton) {
+        printButton.addEventListener("click", submitPrintRequest);
+      }
+      if (refreshPrintersButton) {
+        refreshPrintersButton.addEventListener("click", () => {
+          printersLoaded = false;
+          fetchPrinters(true);
+        });
+      }
+      if (printerSelect) {
+        printerSelect.addEventListener("change", updatePrinterSelectionNote);
       }
 
       function updateConversionProgress(entries, shouldShow) {
@@ -586,8 +838,10 @@
               ) {
                 shouldStopPolling = true;
               }
+              showPrinterSection(true);
             } else if (emailTextArea) {
               emailTextArea.value = "";
+              showPrinterSection(false);
             }
             if (data.elapsed_display) {
               metaText = `総経過時間: ${data.elapsed_display}`;
@@ -606,6 +860,7 @@
             if (emailTextArea) {
               emailTextArea.value = "";
             }
+            showPrinterSection(false);
             currentReportNumber = "";
           }
 

@@ -5,6 +5,7 @@ import logging
 import re
 import shutil
 import sys
+import time
 import threading
 import uuid
 import zipfile
@@ -14,6 +15,15 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Dict, Hashable, Iterable, Iterator, List, TypeVar
 from zoneinfo import ZoneInfo
+
+try:
+    import win32print
+    import win32con
+    import win32api
+except ImportError:  # pragma: no cover - Windows only dependency
+    win32print = None  # type: ignore[assignment]
+    win32con = None  # type: ignore[assignment]
+    win32api = None  # type: ignore[assignment]
 
 from dotenv import load_dotenv
 from flask import (
@@ -118,6 +128,278 @@ def _deduplicate_list(items: Iterable[T]) -> List[T]:
     """Return a list containing the first occurrence of every item in ``items``."""
 
     return list(_iter_unique(items))
+
+
+STANDARD_PRINTER_KEYWORDS = (
+    "microsoft print to pdf",
+    "microsoft xps document writer",
+    "onenote",
+    "send to onenote",
+    "fax",
+)
+
+
+def _is_standard_printer(name: str) -> bool:
+    normalized = name.lower().strip()
+    if not normalized:
+        return True
+    return any(keyword in normalized for keyword in STANDARD_PRINTER_KEYWORDS)
+
+
+def _extract_devmode(printer_info: object) -> object | None:
+    if isinstance(printer_info, dict):
+        return printer_info.get("pDevMode")
+    if isinstance(printer_info, (list, tuple)) and len(printer_info) > 8:
+        return printer_info[8]
+    return None
+
+
+def _get_printer_capabilities(printer_name: str) -> Dict[str, bool]:
+    """Return color/duplex capabilities for a printer."""
+
+    capabilities = {
+        "color_supported": False,
+        "duplex_supported": False,
+    }
+    if not win32print:
+        return capabilities
+
+    # Prefer DeviceCapabilities (driver-reported support).
+    try:
+        if win32con:
+            color_cap = win32print.DeviceCapabilities(
+                printer_name, None, win32con.DC_COLORDEVICE, None
+            )
+            duplex_cap = win32print.DeviceCapabilities(
+                printer_name, None, win32con.DC_DUPLEX, None
+            )
+            capabilities["color_supported"] = bool(color_cap)
+            capabilities["duplex_supported"] = bool(duplex_cap)
+    except Exception:
+        pass
+
+    handle = None
+    try:
+        handle = win32print.OpenPrinter(printer_name)
+        info = win32print.GetPrinter(handle, 2)
+        devmode = _extract_devmode(info)
+        if devmode:
+            # If DeviceCapabilities failed, fall back to dm fields.
+            if not capabilities["color_supported"]:
+                try:
+                    color_value = getattr(devmode, "Color", getattr(devmode, "dmColor", 0))
+                    capabilities["color_supported"] = color_value >= 2
+                except Exception:
+                    pass
+
+            if not capabilities["duplex_supported"]:
+                try:
+                    duplex_value = getattr(devmode, "Duplex", getattr(devmode, "dmDuplex", 0))
+                    capabilities["duplex_supported"] = duplex_value >= 2
+                except Exception:
+                    pass
+    except Exception as exc:  # pragma: no cover - platform specific
+        logging.getLogger(__name__).debug(
+            "Failed to query capabilities for printer %s: %s", printer_name, exc
+        )
+    finally:
+        if handle:
+            try:
+                win32print.ClosePrinter(handle)
+            except Exception:
+                pass
+
+    return capabilities
+
+
+def _list_available_printers() -> List[Dict[str, object]]:
+    """Enumerate printers available on the host machine, excluding Windows built-ins."""
+
+    if not win32print:
+        return []
+
+    flags = (
+        getattr(win32print, "PRINTER_ENUM_LOCAL", 2)
+        | getattr(win32print, "PRINTER_ENUM_CONNECTIONS", 4)
+    )
+    try:
+        printer_entries = win32print.EnumPrinters(flags)
+    except Exception as exc:  # pragma: no cover - platform specific
+        logging.getLogger(__name__).warning("Failed to enumerate printers: %s", exc)
+        return []
+
+    try:
+        default_printer = str(win32print.GetDefaultPrinter())
+    except Exception:  # pragma: no cover - platform specific
+        default_printer = ""
+
+    printers: List[Dict[str, object]] = []
+    seen: set[str] = set()
+    for entry in printer_entries:
+        if isinstance(entry, (list, tuple)) and len(entry) >= 3:
+            name = str(entry[2]).strip()
+        else:
+            name = str(entry).strip()
+        if not name:
+            continue
+        normalized = name.lower()
+        if normalized in seen or _is_standard_printer(name):
+            continue
+        seen.add(normalized)
+        capabilities = _get_printer_capabilities(name)
+        warnings: List[str] = []
+        if not capabilities["color_supported"]:
+            warnings.append("カラー非対応（白黒印刷）")
+        if not capabilities["duplex_supported"]:
+            warnings.append("両面非対応（片面印刷）")
+        printers.append(
+            {
+                "name": name,
+                "is_default": default_printer.lower() == normalized,
+                "color_supported": capabilities["color_supported"],
+                "duplex_supported": capabilities["duplex_supported"],
+                "warnings": warnings,
+            }
+        )
+
+    printers.sort(
+        key=lambda item: (
+            not (item["color_supported"] and item["duplex_supported"]),
+            not item["color_supported"],
+            not item["duplex_supported"],
+            not item["is_default"],
+            item["name"].lower(),
+        )
+    )
+    return printers
+
+
+def _send_pdf_to_printer(file_path: Path, printer_name: str) -> None:
+    """Send the PDF to the specified printer."""
+
+    if not win32print:
+        raise RuntimeError("Printing is not available on this platform.")
+    if not file_path.exists():
+        raise FileNotFoundError(str(file_path))
+
+    capabilities = _get_printer_capabilities(printer_name)
+
+    # Prefer ShellExecute "printto" so the associated PDF handler renders EMF for printers
+    # that cannot consume raw PDF directly (common cause of instant-done jobs).
+    if win32api:
+        handle = None
+        original_devmode = None
+        original_info = None
+        try:
+            handle = win32print.OpenPrinter(printer_name, {"DesiredAccess": win32print.PRINTER_ALL_ACCESS})
+            try:
+                info = win32print.GetPrinter(handle, 2)
+                try:
+                    import copy
+
+                    original_info = copy.deepcopy(info)
+                except Exception:
+                    original_info = None
+                devmode = _extract_devmode(info)
+                if devmode and win32con:
+                    # Keep a copy to restore later (best effort).
+                    try:
+                        import copy
+
+                        original_devmode = copy.deepcopy(devmode)
+                    except Exception:
+                        original_devmode = None
+
+                    try:
+                        if hasattr(devmode, "dmFields"):
+                            devmode.dmFields |= getattr(win32con, "DM_COLOR", 0)
+                            devmode.dmFields |= getattr(win32con, "DM_DUPLEX", 0)
+                        if hasattr(devmode, "Color"):
+                            devmode.Color = (
+                                getattr(win32con, "DMCOLOR_COLOR", 2)
+                                if capabilities["color_supported"]
+                                else getattr(win32con, "DMCOLOR_MONOCHROME", 1)
+                            )
+                        if hasattr(devmode, "Duplex"):
+                            devmode.Duplex = (
+                                getattr(win32con, "DMDUP_VERTICAL", 2)
+                                if capabilities["duplex_supported"]
+                                else getattr(win32con, "DMDUP_SIMPLEX", 1)
+                            )
+                        # Normalize via DocumentProperties so the driver clears grayscale flags.
+                        try:
+                            devmode = win32print.DocumentProperties(
+                                None,
+                                handle,
+                                printer_name,
+                                devmode,
+                                devmode,
+                                win32con.DM_IN_BUFFER | win32con.DM_OUT_BUFFER,
+                            )
+                        except Exception:
+                            pass
+                        # Apply as current defaults (best effort) so ShellExecute uses them.
+                        info["pDevMode"] = devmode
+                        win32print.SetPrinter(handle, 2, info, 0)
+                    except Exception as exc:
+                        logging.getLogger(__name__).debug(
+                            "Failed to apply devmode for printer %s: %s", printer_name, exc
+                        )
+            except Exception as exc:
+                logging.getLogger(__name__).debug(
+                    "Failed to open printer for devmode %s: %s", printer_name, exc
+                )
+
+            win32api.ShellExecute(
+                0,
+                "printto",
+                str(file_path),
+                f'"{printer_name}"',
+                ".",
+                0,
+            )
+
+            # Give the spooler a moment to pick up the settings before restoring.
+            time.sleep(2.0)
+        finally:
+            if handle:
+                try:
+                    if original_info is not None and "pDevMode" in original_info:
+                        win32print.SetPrinter(handle, 2, original_info, 0)
+                    elif original_devmode is not None:
+                        info = win32print.GetPrinter(handle, 2)
+                        info["pDevMode"] = original_devmode
+                        win32print.SetPrinter(handle, 2, info, 0)
+                except Exception:
+                    # Restoration is best-effort; ignore failures.
+                    pass
+                try:
+                    win32print.ClosePrinter(handle)
+                except Exception:
+                    pass
+        return
+
+    # Fallback: raw send (requires PDF-direct capable printer).
+    handle = win32print.OpenPrinter(printer_name)
+    try:
+        win32print.StartDocPrinter(
+            handle,
+            1,
+            ("ReportPDFConverter", None, "RAW"),
+        )
+        try:
+            win32print.StartPagePrinter(handle)
+            with file_path.open("rb") as pdf_file:
+                while True:
+                    chunk = pdf_file.read(8192)
+                    if not chunk:
+                        break
+                    win32print.WritePrinter(handle, chunk)
+            win32print.EndPagePrinter(handle)
+        finally:
+            win32print.EndDocPrinter(handle)
+    finally:
+        win32print.ClosePrinter(handle)
 
 
 def _cleanup_data_directories() -> None:
@@ -1331,6 +1613,53 @@ def download_merged_pdf(job_id: str) -> Response:
         as_attachment=True,
         download_name=file_path.name,
     )
+
+
+@app.route("/api/printers", methods=["GET"])
+def api_printers() -> Response:
+    printers = _list_available_printers()
+    return jsonify({"printers": printers})
+
+
+@app.route("/print/<job_id>", methods=["POST"])
+def print_pdf(job_id: str) -> Response:
+    payload = request.get_json(silent=True) or {}
+    printer_raw = payload.get("printer_name", "")
+    printer_name = str(printer_raw or "").strip()
+
+    if not printer_name:
+        return jsonify({"error": "プリンタを選択してください。"}), 400
+    if _is_standard_printer(printer_name):
+        return jsonify({"error": "指定したプリンタは使用できません。"}), 400
+    if not win32print:
+        return jsonify({"error": "Windowsのプリンタ機能が利用できません。"}), 503
+
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if not job or job.status != "completed" or not job.merged_pdf:
+            return jsonify({"error": "ジョブが完了していません。"}), 400
+        file_path = job.merged_pdf
+
+    if not file_path.exists():
+        return jsonify({"error": "印刷対象のPDFを見つけられませんでした。"}), 404
+
+    available_printers = _list_available_printers()
+    printer_lookup = {item["name"].lower(): item["name"] for item in available_printers}
+    canonical_name = printer_lookup.get(printer_name.lower())
+    if not canonical_name:
+        return jsonify({"error": "指定したプリンタが見つかりません。"}), 400
+
+    try:
+        _send_pdf_to_printer(file_path, canonical_name)
+    except FileNotFoundError:
+        return jsonify({"error": "印刷対象のPDFを見つけられませんでした。"}), 404
+    except Exception as exc:
+        logging.getLogger(__name__).exception(
+            "Failed to print job %s to printer %s", job_id, canonical_name
+        )
+        return jsonify({"error": f"印刷に失敗しました: {exc}"}), 500
+
+    return jsonify({"status": "ok", "printer": canonical_name})
 
 
 @app.route("/status/<job_id>", methods=["GET"])
