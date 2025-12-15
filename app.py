@@ -559,13 +559,13 @@ class OrderPreferences:
     """Serializable storage for preferred team/member ordering."""
 
     team_sequence: List[str]
-    member_sequences: Dict[str, List[str]]
+    member_sequences: Dict[str, List[dict[str, str]]]
 
     @classmethod
     def empty(cls) -> "OrderPreferences":
         return cls(team_sequence=[], member_sequences={})
 
-    def to_dict(self) -> Dict[str, List[str]]:
+    def to_dict(self) -> Dict[str, object]:
         return {
             "team_sequence": self.team_sequence,
             "member_sequences": self.member_sequences,
@@ -583,19 +583,16 @@ class OrderPreferences:
             )
 
         raw_members = payload.get("member_sequences", {})
-        member_sequences: Dict[str, List[str]] = {}
+        member_sequences: Dict[str, List[dict[str, str]]] = {}
         if isinstance(raw_members, dict):
             for raw_key, raw_value in raw_members.items():
                 if not isinstance(raw_key, str) or not isinstance(raw_value, list):
                     continue
                 team_key = _normalize_team_key(raw_key)
-                members = _normalize_member_names(raw_value)
+                members = _normalize_member_objects(raw_value)
                 if not members:
                     continue
-                existing = member_sequences.setdefault(team_key, [])
-                for member in members:
-                    if member not in existing:
-                        existing.append(member)
+                member_sequences.setdefault(team_key, []).extend(members)
 
         if UNGROUPED_TEAM_KEY in member_sequences and not member_sequences[
             UNGROUPED_TEAM_KEY
@@ -611,7 +608,7 @@ class OrderPreferences:
 
     @classmethod
     def from_legacy_list(cls, items: List[str]) -> "OrderPreferences":
-        member_sequences: Dict[str, List[str]] = {}
+        member_sequences: Dict[str, List[dict[str, str]]] = {}
         team_sequence: List[str] = []
         for name in items:
             if not isinstance(name, str):
@@ -627,19 +624,93 @@ class OrderPreferences:
             if team_key not in team_sequence:
                 team_sequence.append(team_key)
             members = member_sequences.setdefault(team_key, [])
-            if stripped and stripped not in members:
-                members.append(stripped)
-        return cls(team_sequence=team_sequence, member_sequences=member_sequences)
+            if stripped:
+                members.append({"name": stripped})
+        return cls(
+            team_sequence=team_sequence,
+            member_sequences={
+                key: _normalize_member_objects(value) for key, value in member_sequences.items()
+            },
+        )
 
 
-def _normalize_member_names(members: Iterable[str]) -> List[str]:
-    cleaned: List[str] = []
+def _member_name_key(name: str) -> str:
+    return PERSON_NORMALIZATION_PATTERN.sub("", name).lower().strip()
+
+
+def _extract_member_names(members: Iterable[object]) -> List[str]:
+    names: List[str] = []
     for member in members:
-        if not isinstance(member, str):
+        candidate: str | None = None
+        if isinstance(member, str):
+            candidate = member
+        elif isinstance(member, dict) and isinstance(member.get("name"), str):
+            candidate = member.get("name")
+        if not candidate:
             continue
-        stripped = member.strip()
-        if stripped and stripped not in cleaned:
-            cleaned.append(stripped)
+        stripped = candidate.strip()
+        if stripped and stripped not in names:
+            names.append(stripped)
+    return names
+
+
+def _normalize_member_objects(
+    members: Iterable[object],
+    *,
+    existing: List[dict[str, object]] | None = None,
+) -> List[dict[str, str]]:
+    """Normalize raw member inputs to keep name/email pairs while deduping by name."""
+
+    existing_lookup: dict[str, dict[str, str]] = {}
+    for item in existing or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        email = str(item.get("email", "")).strip()
+        key = _member_name_key(name)
+        if not key:
+            continue
+        obj: dict[str, str] = {"name": name}
+        if email:
+            obj["email"] = email
+        existing_lookup[key] = obj
+
+    cleaned: List[dict[str, str]] = []
+    seen: set[str] = set()
+
+    for member in members:
+        raw_name: str | None = None
+        raw_email: str | None = None
+
+        if isinstance(member, str):
+            raw_name = member
+        elif isinstance(member, dict):
+            if isinstance(member.get("name"), str):
+                raw_name = member.get("name")
+            if isinstance(member.get("email"), str):
+                raw_email = member.get("email")
+
+        if not raw_name:
+            continue
+
+        name = raw_name.strip()
+        email = (raw_email or "").strip()
+        key = _member_name_key(name)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+
+        base = existing_lookup.get(key, {"name": name})
+        normalized: dict[str, str] = {"name": base.get("name", name)}
+        if email:
+            normalized["email"] = email
+        elif base.get("email"):
+            normalized["email"] = base["email"]
+
+        cleaned.append(normalized)
+
     return cleaned
 
 class OrderManager:
@@ -649,8 +720,48 @@ class OrderManager:
 
     def _write_preferences(self, preferences: OrderPreferences) -> None:
         self.storage_file.parent.mkdir(parents=True, exist_ok=True)
+        payload = preferences.to_dict()
+        team_sequence = payload.get("team_sequence", [])
+        member_sequences = payload.get("member_sequences", {})
+
+        team_json = json.dumps(
+            team_sequence,
+            ensure_ascii=False,
+            indent=2,
+            separators=(", ", ": "),
+        )
+        # Align nested indent for team_sequence block.
+        team_json = "\n  ".join(team_json.splitlines())
+
+        lines: List[str] = []
+        lines.append("{")
+        lines.append(f'  "team_sequence": {team_json},')
+        lines.append('  "member_sequences": {')
+
+        items = list(member_sequences.items()) if isinstance(member_sequences, dict) else []
+        for index, (team_key, members) in enumerate(items):
+            comma = "," if index < len(items) - 1 else ""
+            lines.append(f'    "{team_key}": [')
+            member_list = members if isinstance(members, list) else []
+            for m_index, member in enumerate(member_list):
+                m_comma = "," if m_index < len(member_list) - 1 else ""
+                member_json = json.dumps(
+                    member if isinstance(member, dict) else {"name": str(member)},
+                    ensure_ascii=False,
+                    separators=(", ", ": "),
+                )
+                lines.append(f"      {member_json}{m_comma}")
+            lines.append(f"    ]{comma}")
+
+        if not items:
+            # Empty object formatting.
+            lines[-1] = '  "member_sequences": {}'
+        else:
+            lines.append("  }")
+        lines.append("}")
+
         with self.storage_file.open("w", encoding="utf-8") as fh:
-            json.dump(preferences.to_dict(), fh, ensure_ascii=False, indent=2)
+            fh.write("\n".join(lines))
 
     def load_preferences(self) -> OrderPreferences:
         if not self.storage_file.exists():
@@ -670,12 +781,15 @@ class OrderManager:
 
         return OrderPreferences.empty()
 
-    def save_member_sequence(self, team_key: str, members: List[str]) -> None:
+    def save_member_sequence(self, team_key: str, members: List[object]) -> None:
         normalized_team = _normalize_team_key(team_key)
-        cleaned_members = _normalize_member_names(members)
 
         with self._lock:
             preferences = self.load_preferences()
+            cleaned_members = _normalize_member_objects(
+                members,
+                existing=preferences.member_sequences.get(normalized_team, []),
+            )
             if cleaned_members:
                 if normalized_team not in preferences.team_sequence:
                     preferences.team_sequence.append(normalized_team)
@@ -721,7 +835,7 @@ class OrderManager:
 
         ordered_entries: Dict[str, List[ZipEntry]] = {}
         for team_key in team_sequence:
-            members = preferences.member_sequences.get(team_key, [])
+            members = _extract_member_names(preferences.member_sequences.get(team_key, []))
             items = team_map.get(team_key, [])
             ordered_entries[team_key] = self._sort_team_entries(items, members)
 
@@ -1384,7 +1498,7 @@ def prepare_upload() -> Response | str:
     session_team_options = preference_team_options or team_options
 
     default_member_sequences = {
-        key: list(value)
+        key: _extract_member_names(value)
         for key, value in preferences.member_sequences.items()
     }
 
@@ -1431,7 +1545,7 @@ def _collect_preference_teams(preferences: OrderPreferences) -> List[Dict[str, o
             {
                 "key": team_key,
                 "label": _team_display_label(team_key),
-                "members": list(preferences.member_sequences.get(team_key, [])),
+                "members": _extract_member_names(preferences.member_sequences.get(team_key, [])),
             }
         )
         seen.add(team_key)
@@ -1487,27 +1601,25 @@ def save_default_member_order() -> Response:
     if not isinstance(members_raw, list):
         return jsonify({"error": "メンバー情報の形式が正しくありません。"}), 400
 
-    normalized_members: List[str] = []
-    for item in members_raw:
-        if not isinstance(item, str):
-            continue
-        stripped = item.strip()
-        if stripped and stripped not in normalized_members:
-            normalized_members.append(stripped)
-
     if not team_key:
         return jsonify({"error": "班名を入力してください。"}), 400
 
     normalized_team = _normalize_team_key(team_key)
 
-    order_manager.save_member_sequence(normalized_team, normalized_members)
+    preferences = order_manager.load_preferences()
+    cleaned_members = _normalize_member_objects(
+        members_raw,
+        existing=preferences.member_sequences.get(normalized_team, []),
+    )
+
+    order_manager.save_member_sequence(normalized_team, cleaned_members)
 
     return jsonify(
         {
             "status": "ok",
             "team_key": normalized_team,
             "label": _team_display_label(normalized_team),
-            "members": normalized_members,
+            "members": _extract_member_names(cleaned_members),
         }
     )
 
@@ -1536,10 +1648,15 @@ def delete_default_member_order() -> Response:
 def api_default_order() -> Response:
     preferences = order_manager.load_preferences()
     teams = _collect_preference_teams(preferences)
+    member_sequences = {
+        key: _extract_member_names(value)
+        for key, value in preferences.member_sequences.items()
+    }
     return jsonify(
         {
             "team_sequence": preferences.team_sequence,
-            "member_sequences": preferences.member_sequences,
+            "member_sequences": member_sequences,
+            "member_details": preferences.member_sequences,
             "teams": teams,
         }
     )
