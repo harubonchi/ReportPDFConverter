@@ -105,6 +105,7 @@ DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 WORK_DIR = DATA_DIR / "work"
 ORDER_FILE = BASE_DIR / "order.json"
+FACULTY_CONTACTS_FILE = BASE_DIR / "faculty_contacts.json"
 
 for directory in (UPLOAD_DIR, WORK_DIR):
     directory.mkdir(parents=True, exist_ok=True)
@@ -1412,7 +1413,8 @@ def _process_job(job_id: str) -> None:
                 try:
                     send_email_with_attachment(
                         config=EMAIL_CONFIG,
-                        recipient=recipient_email,
+                        recipients=[recipient_email],
+                        cc_recipients=[],
                         subject=f"第{report_number}回報告書",
                         body="",
                         attachment_path=merged_path,
@@ -1559,6 +1561,101 @@ def _collect_preference_teams(preferences: OrderPreferences) -> List[Dict[str, o
     return teams
 
 
+def _load_faculty_contacts() -> List[Dict[str, str]]:
+    if not FACULTY_CONTACTS_FILE.exists():
+        return []
+    try:
+        with FACULTY_CONTACTS_FILE.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return []
+
+    raw_members: Iterable[object]
+    if isinstance(data, dict) and isinstance(data.get("members"), list):
+        raw_members = data.get("members", [])
+    elif isinstance(data, list):
+        raw_members = data
+    else:
+        return []
+
+    contacts: List[Dict[str, str]] = []
+    seen_emails: set[str] = set()
+    for item in raw_members:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", "")).strip()
+        email = str(item.get("email", "")).strip()
+        preferred = str(item.get("preferred", "")).strip().lower()
+        if not email:
+            continue
+        normalized = email.lower()
+        if normalized in seen_emails:
+            continue
+        seen_emails.add(normalized)
+        contact = {"name": name or email, "email": email}
+        if preferred in {"to", "cc"}:
+            contact["preferred"] = preferred
+        contacts.append(contact)
+
+    return contacts
+
+
+def _collect_email_recipient_groups(preferences: OrderPreferences) -> List[Dict[str, object]]:
+    """Return email-recipient groups (by team) using saved preferences."""
+
+    team_order: List[str] = []
+    for key in preferences.team_sequence:
+        if key not in team_order:
+            team_order.append(key)
+    for key in preferences.member_sequences.keys():
+        if key not in team_order:
+            team_order.append(key)
+
+    groups: List[Dict[str, object]] = []
+    for team_key in team_order:
+        raw_members = preferences.member_sequences.get(team_key, [])
+        members: List[Dict[str, str]] = []
+        seen_emails: set[str] = set()
+        for member in raw_members:
+            if not isinstance(member, dict):
+                continue
+            name_raw = member.get("name")
+            email_raw = member.get("email")
+            if not isinstance(name_raw, str) or not isinstance(email_raw, str):
+                continue
+            name = name_raw.strip()
+            email = email_raw.strip()
+            if not email:
+                continue
+            normalized_email = email.lower()
+            if normalized_email in seen_emails:
+                continue
+            seen_emails.add(normalized_email)
+            members.append({"name": name or email, "email": email})
+        if not members:
+            continue
+        groups.append(
+            {
+                "key": team_key,
+                "label": _team_display_label(team_key),
+                "members": members,
+            }
+        )
+
+    faculty_contacts = _load_faculty_contacts()
+    if faculty_contacts:
+        groups.insert(
+            0,
+            {
+                "key": "__faculty__",
+                "label": "教員・秘書・Dr",
+                "members": faculty_contacts,
+            },
+        )
+
+    return groups
+
+
 @app.route("/default-order-editor", methods=["GET"])
 def default_order_editor() -> str:
     team_param = request.args.get("team", "").strip()
@@ -1585,6 +1682,14 @@ def default_order_editor() -> str:
         "default_order_editor.html",
         initial_data=initial_data,
     )
+
+
+@app.route("/recipient-selector", methods=["GET"])
+def recipient_selector() -> str:
+    preferences = order_manager.load_preferences()
+    groups = _collect_email_recipient_groups(preferences)
+    initial_data = {"groups": groups}
+    return render_template("recipient_selector.html", initial_data=initial_data)
 
 
 @app.route("/default-order-editor/save", methods=["POST"])
@@ -1658,6 +1763,114 @@ def api_default_order() -> Response:
             "member_sequences": member_sequences,
             "member_details": preferences.member_sequences,
             "teams": teams,
+        }
+    )
+
+
+@app.route("/send-email/<job_id>", methods=["POST"])
+def send_email(job_id: str) -> Response:
+    if not EMAIL_CONFIG.is_configured:
+        return jsonify({"error": "メール設定が構成されていません。"}), 503
+
+    payload = request.get_json(silent=True) or {}
+    raw_recipients = payload.get("recipients", [])
+    subject_raw = payload.get("subject", "")
+    body_raw = payload.get("body", "")
+
+    def _clean_list(values: Iterable[object]) -> List[str]:
+        cleaned: List[str] = []
+        seen: set[str] = set()
+        for value in values:
+            email = str(value or "").strip()
+            if not email:
+                continue
+            key = email.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(email)
+        return cleaned
+
+    to_candidates: List[str] = []
+    cc_candidates: List[str] = []
+
+    if isinstance(raw_recipients, dict):
+        to_raw = raw_recipients.get("to", [])
+        cc_raw = raw_recipients.get("cc", [])
+        if isinstance(to_raw, list):
+            to_candidates.extend(_clean_list(to_raw))
+        if isinstance(cc_raw, list):
+            cc_candidates.extend(_clean_list(cc_raw))
+    elif isinstance(raw_recipients, list):
+        for item in raw_recipients:
+            if isinstance(item, dict):
+                email = str(item.get("email", "")).strip()
+                preferred = str(item.get("preferred", "")).strip().lower()
+                if not email:
+                    continue
+                if preferred == "to":
+                    to_candidates.append(email)
+                else:
+                    cc_candidates.append(email)
+            else:
+                email = str(item or "").strip()
+                if email:
+                    cc_candidates.append(email)
+
+    to_recipients = _clean_list(to_candidates)
+    cc_recipients = _clean_list(cc_candidates)
+
+    if not to_recipients and cc_recipients:
+        to_recipients = cc_recipients
+        cc_recipients = []
+
+    if not to_recipients:
+        return jsonify({"error": "宛先を選択してください。"}), 400
+
+    subject = str(subject_raw or "").strip()
+    body = str(body_raw or "").strip()
+
+    with jobs_lock:
+        job = jobs.get(job_id)
+    if not job or job.status != "completed" or not job.merged_pdf:
+        return jsonify({"error": "完了済みのジョブが見つかりません。"}), 400
+    if not job.merged_pdf.exists():
+        return jsonify({"error": "添付するPDFが見つかりません。"}), 404
+
+    if not subject:
+        if job.report_number:
+            subject = f"第{job.report_number}回報告書"
+        else:
+            subject = "報告書"
+
+    _update_job(job_id, email_delivery_status="sending")
+
+    delivery_status = "sent"
+    failures: List[Dict[str, str]] = []
+    try:
+        send_email_with_attachment(
+            config=EMAIL_CONFIG,
+            recipients=to_recipients,
+            cc_recipients=cc_recipients,
+            subject=subject,
+            body=body,
+            attachment_path=job.merged_pdf,
+        )
+    except Exception as exc:  # noqa: BLE001
+        failures.append({"error": str(exc)})
+        delivery_status = "failed"
+
+    _update_job(
+        job_id,
+        email_delivery_status="" if delivery_status == "partial" else delivery_status,
+    )
+
+    return jsonify(
+        {
+            "status": delivery_status,
+            "failures": failures,
+            "to": to_recipients,
+            "cc": cc_recipients,
         }
     )
 

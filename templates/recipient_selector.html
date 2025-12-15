@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>メール宛先の選択</title>
+    <style>
+      body {
+        font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+        margin: 1.5rem auto;
+        max-width: 720px;
+        padding: 0 1.25rem;
+        color: #1f2933;
+        background: #f8fafc;
+      }
+      .container {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin: 0 0 1rem 0;
+        color: #0b7285;
+        text-align: center;
+      }
+      .group {
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 0.75rem 0.95rem;
+        background: #fff;
+      }
+      .group + .group {
+        margin-top: 0.9rem;
+      }
+      .group-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+      }
+      .group-title {
+        font-weight: 700;
+        color: #0b7285;
+      }
+      .member-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 0.35rem;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      }
+      .member-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.35rem 0.5rem;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+      }
+      .member-label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+      }
+      .member-name {
+        font-weight: 600;
+      }
+      .member-email {
+        font-size: 0.9rem;
+        color: #475569;
+      }
+      .footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.65rem;
+        margin-top: 1.25rem;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.1rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #0b7285;
+        color: #fff;
+      }
+      button.secondary {
+        background: #495057;
+        color: #fff;
+      }
+      .empty {
+        padding: 1rem;
+        text-align: center;
+        color: #64748b;
+        background: #f1f5f9;
+        border-radius: 10px;
+        border: 1px solid #e2e8f0;
+      }
+      .actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .select-all {
+        display: inline-flex;
+        gap: 0.35rem;
+        align-items: center;
+        font-weight: 600;
+        color: #0f172a;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>メール宛先の選択</h1>
+    <div class="container">
+      <div id="group-container"></div>
+      <div class="footer">
+        <button type="button" class="secondary" id="close-button">閉じる</button>
+        <button type="button" class="primary" id="apply-button">宛先を反映</button>
+      </div>
+    </div>
+
+    <script type="application/json" id="initial-data">{{ initial_data | tojson }}</script>
+    <script>
+      const initialDataElement = document.getElementById("initial-data");
+      const groupContainer = document.getElementById("group-container");
+      const closeButton = document.getElementById("close-button");
+      const applyButton = document.getElementById("apply-button");
+
+      const initialData = initialDataElement
+        ? JSON.parse(initialDataElement.textContent || "{}")
+        : {};
+
+      const groups = Array.isArray(initialData.groups) ? initialData.groups : [];
+      const selected = new Map();
+
+      function render() {
+        groupContainer.innerHTML = "";
+        if (!groups.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "メールアドレスが登録されているメンバーが見つかりません。";
+          groupContainer.appendChild(empty);
+          return;
+        }
+
+        groups.forEach((group) => {
+          const wrapper = document.createElement("div");
+          wrapper.className = "group";
+
+          const header = document.createElement("div");
+          header.className = "group-header";
+
+          const title = document.createElement("div");
+          title.className = "group-title";
+          title.textContent = group.label || group.key || "未設定";
+          header.appendChild(title);
+
+          const selectAllLabel = document.createElement("label");
+          selectAllLabel.className = "select-all";
+          const selectAllCheckbox = document.createElement("input");
+          selectAllCheckbox.type = "checkbox";
+          selectAllCheckbox.dataset.groupKey = group.key;
+          selectAllCheckbox.addEventListener("change", (event) => {
+            const checked = event.target.checked;
+            const memberList = wrapper.querySelectorAll('input[type="checkbox"][data-email]');
+            memberList.forEach((checkbox) => {
+              checkbox.checked = checked;
+              updateSelectionFromCheckbox(checkbox);
+            });
+          });
+          selectAllLabel.appendChild(selectAllCheckbox);
+          const selectAllText = document.createElement("span");
+          selectAllText.textContent = "この班を全選択";
+          selectAllLabel.appendChild(selectAllText);
+          header.appendChild(selectAllLabel);
+
+          wrapper.appendChild(header);
+
+          const list = document.createElement("ul");
+          list.className = "member-list";
+
+          const members = Array.isArray(group.members) ? group.members : [];
+          members.forEach((member) => {
+            const li = document.createElement("li");
+            li.className = "member-item";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.dataset.email = member.email;
+            checkbox.dataset.name = member.name || member.email;
+            checkbox.dataset.team = group.label || group.key || "";
+            checkbox.dataset.preferred = member.preferred || "";
+            checkbox.id = `chk-${group.key}-${member.email}`;
+            checkbox.checked = selected.has(member.email);
+            checkbox.addEventListener("change", (event) => updateSelectionFromCheckbox(event.target));
+
+            const label = document.createElement("label");
+            label.className = "member-label";
+            label.setAttribute("for", checkbox.id);
+            const nameSpan = document.createElement("span");
+            nameSpan.className = "member-name";
+            nameSpan.textContent = member.name || "(名前なし)";
+            const emailSpan = document.createElement("span");
+            emailSpan.className = "member-email";
+            emailSpan.textContent = member.email;
+
+            label.appendChild(nameSpan);
+            label.appendChild(emailSpan);
+            li.appendChild(checkbox);
+            li.appendChild(label);
+            list.appendChild(li);
+          });
+
+          wrapper.appendChild(list);
+          groupContainer.appendChild(wrapper);
+        });
+      }
+
+      function updateSelectionFromCheckbox(checkbox) {
+        const email = checkbox.dataset.email;
+        const name = checkbox.dataset.name || "";
+        const team = checkbox.dataset.team || "";
+        const preferred = checkbox.dataset.preferred || "";
+        if (!email) {
+          return;
+        }
+        if (checkbox.checked) {
+          selected.set(email, {
+            email,
+            name,
+            team,
+            preferred,
+          });
+        } else {
+          selected.delete(email);
+        }
+      }
+
+      function serializeSelection() {
+        const result = [];
+        selected.forEach((value) => {
+          if (value && value.email) {
+            result.push(value);
+          }
+        });
+        return result;
+      }
+
+      function notifyParent() {
+        if (window.opener && !window.opener.closed) {
+          try {
+            window.opener.postMessage(
+              { type: "recipients-selected", recipients: serializeSelection() },
+              window.location.origin
+            );
+          } catch (error) {
+            console.warn("親ウィンドウへの通知に失敗しました", error);
+          }
+        }
+      }
+
+      if (applyButton) {
+        applyButton.addEventListener("click", () => {
+          notifyParent();
+          window.close();
+        });
+      }
+
+      if (closeButton) {
+        closeButton.addEventListener("click", () => window.close());
+      }
+
+      render();
+    </script>
+  </body>
+</html>

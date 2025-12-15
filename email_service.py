@@ -97,7 +97,8 @@ def _get_gmail_service(config: EmailConfig):
 def send_email_with_attachment(
     *,
     config: EmailConfig,
-    recipient: str,
+    recipients: list[str] | str,
+    cc_recipients: list[str] | None = None,
     subject: str,
     body: str,
     attachment_path: Path,
@@ -107,12 +108,44 @@ def send_email_with_attachment(
     if not config.is_configured:
         raise RuntimeError("Email configuration is incomplete.")
 
+    def _clean_addresses(value: list[str] | str) -> list[str]:
+        if isinstance(value, str):
+            items = [value]
+        elif isinstance(value, list):
+            items = value
+        else:
+            return []
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for addr in items:
+            normalized = str(addr or "").strip()
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(normalized)
+        return cleaned
+
+    to_addresses = _clean_addresses(recipients)
+    cc_addresses = _clean_addresses(cc_recipients or [])
+
+    if not to_addresses and cc_addresses:
+        to_addresses = cc_addresses
+        cc_addresses = []
+
+    if not to_addresses:
+        raise ValueError("At least one recipient is required.")
+
     service = _get_gmail_service(config)
 
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = formataddr((config.display_name, config.sender))
-    message["To"] = recipient
+    message["To"] = ", ".join(to_addresses)
+    if cc_addresses:
+        message["Cc"] = ", ".join(cc_addresses)
     message.set_content(body)
 
     with attachment_path.open("rb") as attachment_file:

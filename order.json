@@ -36,23 +36,23 @@
       {"name": "益", "email": "k897365@kansai-u.ac.jp"}
     ],
     "S班": [
-      {"name": "金澤"},
-      {"name": "洪"},
-      {"name": "新井"},
-      {"name": "中条"},
-      {"name": "横畑"},
-      {"name": "表木"},
-      {"name": "大平"},
-      {"name": "江見"},
-      {"name": "中村"},
-      {"name": "日高"},
-      {"name": "王"},
+      {"name": "金澤", "email": "k216876@kansai-u.ac.jp"},
+      {"name": "洪", "email": "k771742@kansai-u.ac.jp"},
+      {"name": "新井", "email": "k355588@kansai-u.ac.jp"},
+      {"name": "中条", "email": "k383267@kansai-u.ac.jp"},
+      {"name": "横畑", "email": "k120764@kansai-u.ac.jp"},
+      {"name": "表木", "email": "k646404@kansai-u.ac.jp"},
+      {"name": "大平", "email": "k522655@kansai-u.ac.jp"},
+      {"name": "江見", "email": "k865237@kansai-u.ac.jp"},
+      {"name": "中村", "email": "k394732@kansai-u.ac.jp"},
+      {"name": "日高", "email": "k955427@kansai-u.ac.jp"},
+      {"name": "王", "email": "hitwhr56@outlook.com"},
       {"name": "鄭"},
-      {"name": "長澤"},
-      {"name": "畝森"},
-      {"name": "川西"},
-      {"name": "田口"},
-      {"name": "栗山"}
+      {"name": "長澤", "email": "k860763@kansai-u.ac.jp"},
+      {"name": "畝森", "email": "k461360@kansai-u.ac.jp"},
+      {"name": "川西", "email": "k487636@kansai-u.ac.jp"},
+      {"name": "田口", "email": "k194300@kansai-u.ac.jp"},
+      {"name": "栗山", "email": "k588244@kansai-u.ac.jp"}
     ]
   }
 }

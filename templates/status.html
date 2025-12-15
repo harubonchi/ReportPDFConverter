@@ -135,20 +135,27 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        background: #0b7285;
+        background: linear-gradient(135deg, #0b7285, #1098ad);
         color: #fff;
         text-decoration: none;
-        padding: 0.8rem 1.9rem;
+        padding: 0.85rem 2.0rem;
         border-radius: 10px;
-        font-weight: 600;
+        font-weight: 700;
         font-size: 1rem;
-        box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.35);
         white-space: nowrap;
         width: auto;
         flex-shrink: 0;
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
       }
       .download-link:hover {
-        opacity: 0.92;
+        opacity: 0.96;
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px rgba(16, 152, 173, 0.45);
+      }
+      .download-link:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 8px 18px rgba(16, 152, 173, 0.32);
       }
       .email-template h2 {
         margin-top: 0;
@@ -192,9 +199,23 @@
         resize: vertical;
         box-sizing: border-box;
       }
-      #copy-template {
+      .recipient-summary {
         margin-top: 0.75rem;
-        background: #0b7285;
+        padding: 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #1f2937;
+      }
+      .email-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        align-items: center;
+        margin-top: 0.85rem;
+      }
+      #open-recipient-selector {
+        background: #495057;
         color: #fff;
         border: none;
         border-radius: 6px;
@@ -202,13 +223,56 @@
         font-size: 0.95rem;
         cursor: pointer;
       }
-      #copy-template:hover {
-        opacity: 0.92;
+      #send-email-button {
+        background: linear-gradient(135deg, #0b7285, #1098ad);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.65rem 1.35rem;
+        font-size: 1rem;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(16, 152, 173, 0.35);
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
       }
-      .copy-feedback {
-        margin-top: 0.5rem;
-        font-size: 0.9rem;
+      #send-email-button[hidden] {
+        display: none !important;
+      }
+      #open-recipient-selector:hover {
+        opacity: 0.9;
+      }
+      #send-email-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.45);
+      }
+      #send-email-button:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 6px 16px rgba(16, 152, 173, 0.3);
+      }
+      #email-send-feedback {
+        min-height: 1.2rem;
+        color: #1f2937;
+      }
+      #email-send-feedback.error {
+        color: #c92a2a;
+      }
+      #email-send-feedback.success {
         color: #2b8a3e;
+      }
+      .email-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .email-hint {
+        margin: 0.35rem 0 0.75rem 0;
+        font-size: 0.95rem;
+        color: #0b7285;
+        background: #e7f5ff;
+        border: 1px solid #b6e0fe;
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
       }
       .printer-section {
         margin-top: 1.5rem;
@@ -239,16 +303,27 @@
         font-size: 1rem;
       }
       .printer-controls button {
-        background: #0b7285;
+        background: linear-gradient(135deg, #0b7285, #1098ad);
         color: #fff;
         border: none;
-        border-radius: 6px;
-        padding: 0.55rem 0.9rem;
+        border-radius: 8px;
+        padding: 0.6rem 1.0rem;
         font-size: 0.95rem;
         cursor: pointer;
+        box-shadow: 0 8px 20px rgba(16, 152, 173, 0.28);
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
       }
       .printer-controls button.secondary {
         background: #495057;
+        box-shadow: none;
+      }
+      .printer-controls button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.36);
+      }
+      .printer-controls button:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 7px 16px rgba(16, 152, 173, 0.25);
       }
       .printer-feedback {
         margin-top: 0.6rem;
@@ -315,8 +390,15 @@
     </section>
 
     <div id="email-template-section" class="email-template" hidden>
-      <h2>先生にメールを送る時の文章テンプレート</h2>
-      <p class="email-description">班・学年・名前を設定すると文面が自動で更新されます。</p>
+      <div class="email-header">
+        <div>
+          <h2>先生にメールを送る時の文章テンプレート</h2>
+          <p class="email-description">班・学年・名前を設定すると文面が自動で更新されます。</p>
+        </div>
+      </div>
+      <div id="email-hint" class="email-hint">
+        班・学年・名前を入力し宛先を選択すると、PDFを添付したメールを送信できます。
+      </div>
       <div class="template-controls">
         <label>
           班
@@ -340,8 +422,18 @@
         </label>
       </div>
       <textarea id="email-template-text" rows="6" readonly></textarea>
-      <button type="button" id="copy-template">テンプレートをコピー</button>
-      <div id="copy-feedback" class="copy-feedback" role="status" aria-live="polite"></div>
+      <div class="email-actions">
+        <button
+          type="button"
+          id="open-recipient-selector"
+          data-recipient-url="{{ url_for('recipient_selector') }}"
+        >
+          宛先を選択
+        </button>
+        <button type="button" id="send-email-button" hidden>メールを送信</button>
+      </div>
+      <div id="recipient-summary" class="recipient-summary" hidden></div>
+      <div id="email-send-feedback" role="status" aria-live="polite"></div>
     </div>
 
     <script>
@@ -366,8 +458,10 @@
       const gradeSelect = document.getElementById("grade-select");
       const nameInput = document.getElementById("name-input");
       const emailTextArea = document.getElementById("email-template-text");
-      const copyButton = document.getElementById("copy-template");
-      const copyFeedback = document.getElementById("copy-feedback");
+      const openRecipientSelectorButton = document.getElementById("open-recipient-selector");
+      const sendEmailButton = document.getElementById("send-email-button");
+      const recipientSummary = document.getElementById("recipient-summary");
+      const emailSendFeedback = document.getElementById("email-send-feedback");
       const conversionSection = document.getElementById("conversion-section");
       const conversionGrid = document.getElementById("conversion-grid");
       const downloadLink = document.getElementById("download-link");
@@ -381,6 +475,9 @@
         completed: "完了",
         failed: "失敗",
       };
+      const recipientSelectorUrl =
+        (openRecipientSelectorButton && openRecipientSelectorButton.dataset.recipientUrl) || "";
+      let selectedRecipients = [];
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
       const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
@@ -432,18 +529,101 @@
           emailTextArea.value = "";
           return;
         }
+
         const teamValue = teamSelect ? teamSelect.value || "" : "";
         const gradeValue = gradeSelect ? gradeSelect.value || "" : "";
         const nameValue = nameInput ? nameInput.value.trim() : "";
-        const placeholderTeam = "◯◯班";
-        const placeholderGrade = "(学年)";
-        const placeholderName = "(名前)";
-        const teamLabel = teamValue ? formatTeamLabel(teamValue) : placeholderTeam;
-        const gradeLabel = gradeValue || placeholderGrade;
-        const nameLabel = nameValue || placeholderName;
-        const teamGradeSeparator = gradeValue ? (teamValue ? "" : " ") : " ";
-        const gradeNameSeparator = nameValue ? "の" : " の ";
-        emailTextArea.value = `お世話になっております。${teamLabel}${teamGradeSeparator}${gradeLabel}${gradeNameSeparator}${nameLabel}です。\n第${currentReportNumber}回報告書を添付しております。\nよろしくお願いいたします。`;
+
+        const teamLabel = teamValue ? formatTeamLabel(teamValue) : "◯◯班";
+        const gradeLabel = gradeValue ? `${gradeValue}の` : "（学年）の";
+        const nameLabel = nameValue || "(名前)";
+
+        emailTextArea.value = `お世話になっております。${teamLabel}${gradeLabel}${nameLabel}です。\n第${currentReportNumber}回報告書を添付しております。\nよろしくお願いいたします。`;
+        updateSendButtonVisibility();
+      }
+
+      function updateRecipientSummary() {
+        if (!recipientSummary) {
+          return;
+        }
+        if (!selectedRecipients.length) {
+          recipientSummary.hidden = true;
+          recipientSummary.textContent = "";
+          return;
+        }
+        const classify = classifyRecipients(selectedRecipients);
+        const toDisplay = classify.to.map((item) => item.toDisplay).join(", ");
+        const ccDisplay = classify.cc.map((item) => item.toDisplay).join(", ");
+        const parts = [];
+        if (toDisplay) {
+          parts.push(`To: ${toDisplay}`);
+        }
+        if (ccDisplay) {
+          parts.push(`Cc: ${ccDisplay}`);
+        }
+        recipientSummary.textContent =
+          `宛先 (${selectedRecipients.length}件): ` + (parts.join(" / ") || "未選択");
+        recipientSummary.hidden = false;
+      }
+
+      function updateSendButtonVisibility() {
+        if (!sendEmailButton) {
+          return;
+        }
+        const hasName = nameInput && nameInput.value.trim();
+        const hasRecipients = selectedRecipients.length > 0;
+        const ready =
+          Boolean(hasName) && Boolean(hasRecipients) && Boolean(currentReportNumber);
+        sendEmailButton.hidden = !ready;
+        if (openRecipientSelectorButton) {
+          openRecipientSelectorButton.disabled = !currentReportNumber;
+        }
+      }
+
+      function classifyRecipients(recipients) {
+        const to = [];
+        const cc = [];
+        const toSeen = new Set();
+        const ccSeen = new Set();
+
+        const pushUnique = (bucket, seen, email, display, preferred) => {
+          if (seen.has(email)) {
+            return;
+          }
+          seen.add(email);
+          bucket.push({ email, toDisplay: display, preferred });
+        };
+
+        (Array.isArray(recipients) ? recipients : []).forEach((item) => {
+          if (!item || typeof item !== "object") {
+            return;
+          }
+          const email = String(item.email || "").trim();
+          if (!email) {
+            return;
+          }
+          const name = String(item.name || "").trim();
+          const preferredRaw = String(item.preferred || "").trim().toLowerCase();
+          const display = name ? `${name} <${email}>` : email;
+          if (preferredRaw === "to") {
+            pushUnique(to, toSeen, email, display, "to");
+          } else {
+            pushUnique(cc, ccSeen, email, display, preferredRaw || "cc");
+          }
+        });
+
+        if (!to.length && cc.length) {
+          // To が空なら全員 To へ
+          cc.forEach((item) => {
+            if (!toSeen.has(item.email)) {
+              toSeen.add(item.email);
+              to.push(item);
+            }
+          });
+          cc.length = 0;
+        }
+
+        return { to, cc };
       }
 
       if (teamSelect) {
@@ -455,51 +635,106 @@
       if (nameInput) {
         nameInput.addEventListener("input", updateEmailText);
       }
-      // クリップボードへのコピー（HTTPS以外やモバイルでも動くフォールバック付き）
-      async function copyTextToClipboard(text) {
-        // 優先: SecureContext での Clipboard API
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(text);
-          return true;
+      if (openRecipientSelectorButton) {
+        openRecipientSelectorButton.addEventListener("click", openRecipientSelector);
+      }
+      if (sendEmailButton) {
+        sendEmailButton.addEventListener("click", sendEmail);
+      }
+      function openRecipientSelector() {
+        if (!recipientSelectorUrl) {
+          return;
         }
-        // フォールバック: 一時的な textarea を使った execCommand('copy')
-        try {
-          const ta = document.createElement('textarea');
-          ta.value = text;
-          // 画面に見えないように配置
-          ta.style.position = 'fixed';
-          ta.style.top = '-1000px';
-          ta.style.left = '-1000px';
-          ta.setAttribute('readonly', '');
-          document.body.appendChild(ta);
-          ta.focus();
-          ta.select();
-          const ok = document.execCommand('copy');
-          document.body.removeChild(ta);
-          return ok;
-        } catch (_) {
-          return false;
+        const heights = [];
+        if (window.screen) {
+          if (Number.isFinite(Number(window.screen.availHeight))) {
+            heights.push(Number(window.screen.availHeight));
+          }
+          if (Number.isFinite(Number(window.screen.height))) {
+            heights.push(Number(window.screen.height));
+          }
+        }
+        if (window.visualViewport && Number.isFinite(Number(window.visualViewport.height))) {
+          heights.push(Number(window.visualViewport.height));
+        }
+        if (window.innerHeight) {
+          heights.push(Number(window.innerHeight));
+        }
+        const popupHeight = Math.max(360, Math.round((heights.length ? Math.max(...heights) : 900) * 0.9));
+        const popupFeatures = [
+          "width=720",
+          `height=${popupHeight}`,
+          "toolbar=no",
+          "location=no",
+          "status=no",
+          "menubar=no",
+          "scrollbars=yes",
+          "resizable=yes",
+        ].join(",");
+        const opened = window.open(recipientSelectorUrl, "_blank", popupFeatures);
+        if (!opened) {
+          const link = document.createElement("a");
+          link.href = recipientSelectorUrl;
+          link.target = "_blank";
+          link.rel = "";
+          link.style.display = "none";
+          document.body.appendChild(link);
+          link.click();
+          requestAnimationFrame(() => link.remove());
         }
       }
 
-      if (copyButton) {
-        copyButton.addEventListener("click", async () => {
-          if (!emailTextArea || !emailTextArea.value) {
+      function setEmailFeedback(message, type = "") {
+        if (!emailSendFeedback) {
+          return;
+        }
+        emailSendFeedback.textContent = message || "";
+        emailSendFeedback.classList.remove("error", "success");
+        if (type) {
+          emailSendFeedback.classList.add(type);
+        }
+      }
+
+      async function sendEmail() {
+        if (!sendEmailButton || !emailTextArea) {
+          return;
+        }
+        const classified = classifyRecipients(selectedRecipients);
+        const toList = classified.to.map((item) => item.email);
+        const ccList = classified.cc.map((item) => item.email);
+        const hasAny = toList.length + ccList.length > 0;
+        if (!hasAny) {
+          setEmailFeedback("宛先を選択してください。", "error");
+          return;
+        }
+        const subject = currentReportNumber ? `第${currentReportNumber}回報告書` : "報告書";
+        const body = emailTextArea.value || "";
+        setEmailFeedback("メールを送信しています…", "");
+        sendEmailButton.disabled = true;
+        try {
+          const response = await fetch(`/send-email/${encodeURIComponent(jobId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ recipients: { to: toList, cc: ccList }, subject, body }),
+          });
+          const data = await response.json();
+          if (!response.ok || (data && data.error)) {
+            const message = (data && data.error) || "メール送信に失敗しました。";
+            setEmailFeedback(message, "error");
             return;
           }
-          const ok = await copyTextToClipboard(emailTextArea.value);
-          if (ok) {
-            if (copyFeedback) {
-              copyFeedback.style.color = "#2b8a3e";
-              copyFeedback.textContent = "テンプレートをコピーしました。";
-            }
+          if (data.status === "failed") {
+            setEmailFeedback("メール送信に失敗しました。時間をおいて再度お試しください。", "error");
+          } else if (data.status === "partial") {
+            setEmailFeedback("一部の宛先への送信に失敗しました。", "error");
           } else {
-            if (copyFeedback) {
-              copyFeedback.textContent = "クリップボードへのコピーに失敗しました。";
-              copyFeedback.style.color = "#c92a2a";
-            }
+            setEmailFeedback("メールを送信しました。", "success");
           }
-        });
+        } catch (error) {
+          setEmailFeedback("メール送信時にエラーが発生しました。", "error");
+        } finally {
+          sendEmailButton.disabled = false;
+        }
       }
 
       function setPrinterFeedback(message, type = "") {
@@ -831,6 +1066,7 @@
             }
             if (shouldShowCompletionDetails) {
               updateEmailText();
+              updateSendButtonVisibility();
               if (
                 emailDeliveryStatusRaw === "sent" ||
                 emailDeliveryStatusRaw === "failed" ||
@@ -860,6 +1096,10 @@
             if (emailTextArea) {
               emailTextArea.value = "";
             }
+            selectedRecipients = [];
+            updateRecipientSummary();
+            updateSendButtonVisibility();
+            setEmailFeedback("");
             showPrinterSection(false);
             currentReportNumber = "";
           }
@@ -897,6 +1137,25 @@
         }
         setTimeout(refreshStatus, 500); // 500ms間隔（0.5秒）に変更
       }
+
+      window.addEventListener("message", (event) => {
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        if (event.data && event.data.type === "recipients-selected") {
+          const list = Array.isArray(event.data.recipients) ? event.data.recipients : [];
+          selectedRecipients = list
+            .filter((item) => item && typeof item === "object" && item.email)
+            .map((item) => ({
+              email: item.email,
+              name: item.name || item.email,
+              team: item.team || "",
+              preferred: item.preferred || "",
+            }));
+          updateRecipientSummary();
+          updateSendButtonVisibility();
+        }
+      });
 
       refreshStatus();
     </script>
