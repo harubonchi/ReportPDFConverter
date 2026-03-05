@@ -1547,7 +1547,9 @@ def _collect_preference_teams(preferences: OrderPreferences) -> List[Dict[str, o
             {
                 "key": team_key,
                 "label": _team_display_label(team_key),
-                "members": _extract_member_names(preferences.member_sequences.get(team_key, [])),
+                "members": _normalize_member_objects(
+                    preferences.member_sequences.get(team_key, [])
+                ),
             }
         )
         seen.add(team_key)
@@ -1725,6 +1727,7 @@ def save_default_member_order() -> Response:
             "team_key": normalized_team,
             "label": _team_display_label(normalized_team),
             "members": _extract_member_names(cleaned_members),
+            "member_details": cleaned_members,
         }
     )
 
@@ -2026,3 +2029,4 @@ def get_app():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8000)
+

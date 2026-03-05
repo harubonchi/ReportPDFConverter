@@ -50,7 +50,8 @@
         color: #334155;
       }
       select,
-      input[type="text"] {
+      input[type="text"],
+      input[type="email"] {
         border: 1px solid #cbd5e1;
         border-radius: 6px;
         padding: 0.45rem 0.6rem;
@@ -98,9 +99,19 @@
         padding: 0.55rem 0.75rem;
         background: #f8fafc;
       }
+      .member-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+      }
       .member-name {
         font-weight: 600;
         word-break: break-word;
+      }
+      .member-email {
+        color: #64748b;
+        font-size: 0.88rem;
+        word-break: break-all;
       }
       .member-actions {
         display: flex;
@@ -123,7 +134,8 @@
         gap: 0.5rem;
         margin-top: 1rem;
       }
-      .member-input input[type="text"] {
+      .member-input input[type="text"],
+      .member-input input[type="email"] {
         flex: 1 1 auto;
       }
       .footer {
@@ -139,6 +151,9 @@
         .editor-header {
           flex-direction: column;
           align-items: stretch;
+        }
+        .member-input {
+          flex-direction: column;
         }
         .footer {
           flex-direction: column;
@@ -164,6 +179,7 @@
       <ul class="member-list" id="member-list"></ul>
       <div class="member-input">
         <input type="text" id="new-member-name" placeholder="メンバー名を入力" />
+        <input type="email" id="new-member-email" placeholder="メールアドレス（任意）" />
         <button type="button" id="add-member">追加</button>
       </div>
       <div class="footer">
@@ -180,7 +196,8 @@
       const groupSelect = document.getElementById("group-select");
       const memberList = document.getElementById("member-list");
       const emptyState = document.getElementById("empty-state");
-      const memberInput = document.getElementById("new-member-name");
+      const memberNameInput = document.getElementById("new-member-name");
+      const memberEmailInput = document.getElementById("new-member-email");
       const addMemberButton = document.getElementById("add-member");
       const saveButton = document.getElementById("save-order");
       const closeButton = document.getElementById("close-editor");
@@ -197,6 +214,30 @@
           ? initialData.ungrouped_label
           : "班なし";
 
+      function normalizeMember(member) {
+        if (typeof member === "string") {
+          const name = member.trim();
+          return name ? { name, email: "" } : null;
+        }
+        if (!member || typeof member !== "object") {
+          return null;
+        }
+        const rawName = typeof member.name === "string" ? member.name : "";
+        const rawEmail = typeof member.email === "string" ? member.email : "";
+        const name = rawName.trim();
+        if (!name) {
+          return null;
+        }
+        return { name, email: rawEmail.trim() };
+      }
+
+      function isValidEmailAddress(email) {
+        if (!email) {
+          return true;
+        }
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+      }
+
       const teams = new Map();
       let teamOrder = Array.isArray(initialData.team_order) ? [...initialData.team_order] : [];
 
@@ -210,7 +251,11 @@
             return;
           }
           const label = typeof team.label === "string" && team.label ? team.label : key;
-          const members = Array.isArray(team.members) ? [...team.members] : [];
+          const members = Array.isArray(team.members)
+            ? team.members
+                .map((member) => normalizeMember(member))
+                .filter((member) => Boolean(member))
+            : [];
           teams.set(key, { key, label, members });
           if (!teamOrder.includes(key)) {
             teamOrder.push(key);
@@ -264,13 +309,16 @@
 
       function updateMemberInputState() {
         const teamExists = hasCurrentTeam();
-        memberInput.disabled = !teamExists;
+        memberNameInput.disabled = !teamExists;
+        memberEmailInput.disabled = !teamExists;
         addMemberButton.disabled = !teamExists;
         saveButton.disabled = !teamExists;
         if (!teamExists) {
-          memberInput.value = "";
+          memberNameInput.value = "";
+          memberEmailInput.value = "";
         }
-        memberInput.placeholder = teamExists ? "メンバー名を入力" : "班を追加してください";
+        memberNameInput.placeholder = teamExists ? "メンバー名を入力" : "班を追加してください";
+        memberEmailInput.placeholder = teamExists ? "メールアドレス（任意）" : "班を追加してください";
       }
 
       function refreshGroupOptions() {
@@ -333,13 +381,29 @@
         }
         emptyState.hidden = true;
         team.members.forEach((member, index) => {
+          const normalizedMember = normalizeMember(member);
+          if (!normalizedMember) {
+            return;
+          }
+
           const item = document.createElement("li");
           item.className = "member-item";
           item.dataset.index = String(index);
 
+          const info = document.createElement("div");
+          info.className = "member-info";
+
           const nameSpan = document.createElement("span");
           nameSpan.className = "member-name";
-          nameSpan.textContent = member;
+          nameSpan.textContent = normalizedMember.name;
+          info.appendChild(nameSpan);
+
+          if (normalizedMember.email) {
+            const emailSpan = document.createElement("span");
+            emailSpan.className = "member-email";
+            emailSpan.textContent = normalizedMember.email;
+            info.appendChild(emailSpan);
+          }
 
           const actions = document.createElement("div");
           actions.className = "member-actions";
@@ -363,24 +427,31 @@
           actions.appendChild(downButton);
           actions.appendChild(removeButton);
 
-          item.appendChild(nameSpan);
+          item.appendChild(info);
           item.appendChild(actions);
           memberList.appendChild(item);
         });
+
+        if (memberList.children.length === 0) {
+          emptyState.textContent = "メンバーが登録されていません。";
+          emptyState.hidden = false;
+        }
+
         updateDeleteButtonState();
         updateMemberInputState();
       }
 
-      function addMember(name) {
+      function addMember(name, email) {
         const team = hasCurrentTeam() ? teams.get(currentTeamKey) : null;
         if (!team) {
           return;
         }
-        const trimmed = name.trim();
-        if (!trimmed) {
+        const trimmedName = name.trim();
+        const trimmedEmail = email.trim();
+        if (!trimmedName) {
           return;
         }
-        team.members.push(trimmed);
+        team.members.push({ name: trimmedName, email: trimmedEmail });
         renderMembers();
       }
 
@@ -406,6 +477,26 @@
         }
         team.members.splice(index, 1);
         renderMembers();
+      }
+
+      function handleAddMember() {
+        if (!hasCurrentTeam()) {
+          return;
+        }
+        const name = memberNameInput.value.trim();
+        const email = memberEmailInput.value.trim();
+        if (!name) {
+          return;
+        }
+        if (!isValidEmailAddress(email)) {
+          alert("メールアドレスの形式が正しくありません。");
+          memberEmailInput.focus();
+          return;
+        }
+        addMember(name, email);
+        memberNameInput.value = "";
+        memberEmailInput.value = "";
+        memberNameInput.focus();
       }
 
       groupSelect.addEventListener("change", (event) => {
@@ -481,30 +572,20 @@
       });
 
       addMemberButton.addEventListener("click", () => {
-        if (!hasCurrentTeam()) {
-          return;
-        }
-        const value = memberInput.value.trim();
-        if (!value) {
-          return;
-        }
-        addMember(value);
-        memberInput.value = "";
-        memberInput.focus();
+        handleAddMember();
       });
 
-      memberInput.addEventListener("keydown", (event) => {
+      memberNameInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          if (!hasCurrentTeam()) {
-            return;
-          }
-          const value = memberInput.value.trim();
-          if (!value) {
-            return;
-          }
-          addMember(value);
-          memberInput.value = "";
+          handleAddMember();
+        }
+      });
+
+      memberEmailInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          handleAddMember();
         }
       });
 
@@ -522,7 +603,14 @@
         fetch(saveUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ team_key: team.key, members: team.members }),
+          body: JSON.stringify({
+            team_key: team.key,
+            members: Array.isArray(team.members)
+              ? team.members
+                  .map((member) => normalizeMember(member))
+                  .filter((member) => Boolean(member))
+              : [],
+          }),
         })
           .then((response) => {
             if (!response.ok) {
