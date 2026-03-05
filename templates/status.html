@@ -15,6 +15,9 @@
         max-width: 720px;
         color: #1f2933;
       }
+      [hidden] {
+        display: none !important;
+      }
       .credit {
         position: fixed;
         top: 0.75rem;
@@ -248,6 +251,12 @@
         transform: translateY(0px) scale(0.99);
         box-shadow: 0 6px 16px rgba(16, 152, 173, 0.3);
       }
+      #send-email-button:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+        box-shadow: none;
+      }
       #email-send-feedback {
         min-height: 1.2rem;
         color: #1f2937;
@@ -257,6 +266,39 @@
       }
       #email-send-feedback.success {
         color: #2b8a3e;
+      }
+      .email-delivery-status {
+        margin-top: 0.65rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #1f2937;
+      }
+      .email-delivery-status.sending {
+        background: #e7f5ff;
+        border-color: #b6e0fe;
+        color: #0b7285;
+      }
+      .email-delivery-status.sent {
+        background: #ebfbee;
+        border-color: #b2f2bb;
+        color: #2b8a3e;
+      }
+      .email-delivery-status.failed {
+        background: #fff5f5;
+        border-color: #ffc9c9;
+        color: #c92a2a;
+      }
+      .resend-confirm {
+        margin-top: 0.55rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #334155;
+      }
+      .resend-confirm input[type="checkbox"] {
+        transform: translateY(-1px);
       }
       .email-header {
         display: flex;
@@ -432,6 +474,11 @@
         </button>
         <button type="button" id="send-email-button" hidden>メールを送信</button>
       </div>
+      <div id="email-delivery-status" class="email-delivery-status" role="status" aria-live="polite" hidden></div>
+      <label id="resend-confirm-wrapper" class="resend-confirm" hidden>
+        <input type="checkbox" id="confirm-resend" />
+        もう一度メールを送る（再送）
+      </label>
       <div id="recipient-summary" class="recipient-summary" hidden></div>
       <div id="email-send-feedback" role="status" aria-live="polite"></div>
     </div>
@@ -462,6 +509,9 @@
       const sendEmailButton = document.getElementById("send-email-button");
       const recipientSummary = document.getElementById("recipient-summary");
       const emailSendFeedback = document.getElementById("email-send-feedback");
+      const emailDeliveryStatusElement = document.getElementById("email-delivery-status");
+      const resendConfirmWrapper = document.getElementById("resend-confirm-wrapper");
+      const resendConfirmCheckbox = document.getElementById("confirm-resend");
       const conversionSection = document.getElementById("conversion-section");
       const conversionGrid = document.getElementById("conversion-grid");
       const downloadLink = document.getElementById("download-link");
@@ -480,7 +530,13 @@
       let selectedRecipients = [];
       let teamOptionsInitialized = false;
       let currentReportNumber = "";
+      let latestEmailDeliveryStatus = "";
+      let sendingEmail = false;
+      let hasManualSendAttempt = false;
+      let resendConfirmationRequired = false;
+      let manualSendCompleted = false;
       const downloadUrl = "{{ url_for('download_merged_pdf', job_id=job_id) }}";
+      const defaultSendButtonLabel = sendEmailButton ? sendEmailButton.textContent : "メールを送信";
 
       function populateTeamOptions(options) {
         if (!teamSelect || teamOptionsInitialized) {
@@ -566,17 +622,68 @@
         recipientSummary.hidden = false;
       }
 
+      function normalizeEmailDeliveryStatus(value) {
+        return typeof value === "string" ? value.trim().toLowerCase() : "";
+      }
+
+      function requiresResendConfirmation(status) {
+        return status === "sent" || status === "partial";
+      }
+
+      function updateEmailDeliveryStatus(statusRaw) {
+        const status = normalizeEmailDeliveryStatus(statusRaw);
+        latestEmailDeliveryStatus = status;
+
+        if (!hasManualSendAttempt) {
+          if (emailDeliveryStatusElement) {
+            emailDeliveryStatusElement.classList.remove("sending", "sent", "failed");
+            emailDeliveryStatusElement.textContent = "";
+            emailDeliveryStatusElement.hidden = true;
+          }
+          return;
+        }
+
+        if (emailDeliveryStatusElement) {
+          emailDeliveryStatusElement.classList.remove("sending", "sent", "failed");
+          let message = "送信状態: 未送信";
+          if (status === "sending") {
+            message = "送信状態: メール送信処理を実行中です…";
+            emailDeliveryStatusElement.classList.add("sending");
+          } else if (status === "sent" || status === "partial") {
+            message = "送信状態: メール送信処理を実行しました。";
+            emailDeliveryStatusElement.classList.add("sent");
+          } else if (status === "failed") {
+            message = "送信状態: メール送信処理でエラーが発生しました。";
+            emailDeliveryStatusElement.classList.add("failed");
+          }
+          emailDeliveryStatusElement.textContent = message;
+          emailDeliveryStatusElement.hidden = !currentReportNumber;
+        }
+      }
+
       function updateSendButtonVisibility() {
         if (!sendEmailButton) {
           return;
         }
-        const hasName = nameInput && nameInput.value.trim();
+        const hasName = Boolean(nameInput && nameInput.value.trim());
         const hasRecipients = selectedRecipients.length > 0;
-        const ready =
-          Boolean(hasName) && Boolean(hasRecipients) && Boolean(currentReportNumber);
+        const ready = hasName && hasRecipients && Boolean(currentReportNumber);
+        const resendRequired = resendConfirmationRequired && manualSendCompleted;
+        const resendChecked = Boolean(resendConfirmCheckbox && resendConfirmCheckbox.checked);
+
         sendEmailButton.hidden = !ready;
+        sendEmailButton.disabled = !ready || sendingEmail || (resendRequired && !resendChecked);
+        sendEmailButton.textContent = sendingEmail ? "送信中…" : defaultSendButtonLabel;
+
+        if (!resendRequired && resendConfirmCheckbox) {
+          resendConfirmCheckbox.checked = false;
+        }
+        if (resendConfirmWrapper) {
+          resendConfirmWrapper.hidden = !ready || !resendRequired;
+        }
+
         if (openRecipientSelectorButton) {
-          openRecipientSelectorButton.disabled = !currentReportNumber;
+          openRecipientSelectorButton.disabled = !currentReportNumber || sendingEmail;
         }
       }
 
@@ -641,6 +748,9 @@
       if (sendEmailButton) {
         sendEmailButton.addEventListener("click", sendEmail);
       }
+      if (resendConfirmCheckbox) {
+        resendConfirmCheckbox.addEventListener("change", updateSendButtonVisibility);
+      }
       function openRecipientSelector() {
         if (!recipientSelectorUrl) {
           return;
@@ -699,6 +809,15 @@
         if (!sendEmailButton || !emailTextArea) {
           return;
         }
+
+        const resendRequired = resendConfirmationRequired && manualSendCompleted;
+        const resendConfirmed = Boolean(resendConfirmCheckbox && resendConfirmCheckbox.checked);
+        if (resendRequired && !resendConfirmed) {
+          setEmailFeedback("再送する場合は「もう一度メールを送る（再送）」にチェックしてください。", "error");
+          updateSendButtonVisibility();
+          return;
+        }
+
         const classified = classifyRecipients(selectedRecipients);
         const toList = classified.to.map((item) => item.email);
         const ccList = classified.cc.map((item) => item.email);
@@ -707,33 +826,89 @@
           setEmailFeedback("宛先を選択してください。", "error");
           return;
         }
+
         const subject = currentReportNumber ? `第${currentReportNumber}回報告書` : "報告書";
         const body = emailTextArea.value || "";
-        setEmailFeedback("メールを送信しています…", "");
-        sendEmailButton.disabled = true;
+
+        hasManualSendAttempt = true;
+        resendConfirmationRequired = false;
+        manualSendCompleted = false;
+        sendingEmail = true;
+        updateEmailDeliveryStatus("sending");
+        updateSendButtonVisibility();
+        setEmailFeedback("メール送信処理を開始しました。送信完了までお待ちください。", "");
+
         try {
           const response = await fetch(`/send-email/${encodeURIComponent(jobId)}`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ recipients: { to: toList, cc: ccList }, subject, body }),
+            body: JSON.stringify({
+              recipients: { to: toList, cc: ccList },
+              subject,
+              body,
+              confirm_resend: resendConfirmed,
+            }),
           });
-          const data = await response.json();
+
+          let data = {};
+          try {
+            data = await response.json();
+          } catch (error) {
+            data = {};
+          }
+
           if (!response.ok || (data && data.error)) {
             const message = (data && data.error) || "メール送信に失敗しました。";
             setEmailFeedback(message, "error");
+            if (data && data.requires_resend_confirmation) {
+              hasManualSendAttempt = true;
+              resendConfirmationRequired = true;
+              manualSendCompleted = true;
+            }
+            if (data && data.manual_email_sent_once) {
+              hasManualSendAttempt = true;
+              resendConfirmationRequired = true;
+              manualSendCompleted = true;
+            }
+            if (data && data.manual_email_delivery_status) {
+              updateEmailDeliveryStatus(data.manual_email_delivery_status);
+            } else if (data && data.email_delivery_status) {
+              updateEmailDeliveryStatus(data.email_delivery_status);
+            } else {
+              updateEmailDeliveryStatus("failed");
+            }
             return;
           }
-          if (data.status === "failed") {
+
+          const deliveryStatus = normalizeEmailDeliveryStatus(
+            data.manual_email_delivery_status || data.status || ""
+          );
+          manualSendCompleted = true;
+          if (deliveryStatus === "failed") {
+            resendConfirmationRequired = false;
             setEmailFeedback("メール送信に失敗しました。時間をおいて再度お試しください。", "error");
-          } else if (data.status === "partial") {
+            updateEmailDeliveryStatus("failed");
+          } else if (deliveryStatus === "partial") {
+            resendConfirmationRequired = true;
             setEmailFeedback("一部の宛先への送信に失敗しました。", "error");
+            updateEmailDeliveryStatus("partial");
           } else {
-            setEmailFeedback("メールを送信しました。", "success");
+            resendConfirmationRequired = true;
+            setEmailFeedback("", "");
+            updateEmailDeliveryStatus("sent");
+          }
+
+          if (resendConfirmCheckbox) {
+            resendConfirmCheckbox.checked = false;
           }
         } catch (error) {
+          resendConfirmationRequired = false;
+          manualSendCompleted = false;
           setEmailFeedback("メール送信時にエラーが発生しました。", "error");
+          updateEmailDeliveryStatus("failed");
         } finally {
-          sendEmailButton.disabled = false;
+          sendingEmail = false;
+          updateSendButtonVisibility();
         }
       }
 
@@ -1003,6 +1178,10 @@
             typeof data.email_delivery_status === "string"
               ? data.email_delivery_status.trim().toLowerCase()
               : "";
+          const manualEmailDeliveryStatusRaw =
+            typeof data.manual_email_delivery_status === "string"
+              ? data.manual_email_delivery_status.trim().toLowerCase()
+              : "";
 
           statusElement.textContent = statusLabels[data.status] || data.status;
           statusElement.className = "status-value " + data.status;
@@ -1065,6 +1244,20 @@
               emailSection.hidden = !shouldShowCompletionDetails;
             }
             if (shouldShowCompletionDetails) {
+              if (hasManualSendAttempt) {
+                hasManualSendAttempt = true;
+                sendingEmail = manualEmailDeliveryStatusRaw === "sending";
+                resendConfirmationRequired = requiresResendConfirmation(
+                  manualEmailDeliveryStatusRaw
+                );
+                manualSendCompleted = manualEmailDeliveryStatusRaw !== "sending";
+                updateEmailDeliveryStatus(manualEmailDeliveryStatusRaw);
+              } else {
+                sendingEmail = false;
+                resendConfirmationRequired = false;
+                manualSendCompleted = false;
+                updateEmailDeliveryStatus("");
+              }
               updateEmailText();
               updateSendButtonVisibility();
               if (
@@ -1077,6 +1270,7 @@
               showPrinterSection(true);
             } else if (emailTextArea) {
               emailTextArea.value = "";
+              updateEmailDeliveryStatus("");
               showPrinterSection(false);
             }
             if (data.elapsed_display) {
@@ -1098,10 +1292,15 @@
             }
             selectedRecipients = [];
             updateRecipientSummary();
+            currentReportNumber = "";
+            sendingEmail = false;
+            hasManualSendAttempt = false;
+            resendConfirmationRequired = false;
+            manualSendCompleted = false;
+            updateEmailDeliveryStatus("");
             updateSendButtonVisibility();
             setEmailFeedback("");
             showPrinterSection(false);
-            currentReportNumber = "";
           }
 
           if (timestampElement) {
@@ -1161,3 +1360,4 @@
     </script>
   </body>
 </html>
+

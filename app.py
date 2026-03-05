@@ -883,6 +883,8 @@ class JobState:
     progress_current: int = 0
     progress_total: int = 0
     email_delivery_status: str = "pending"
+    manual_email_delivery_status: str = ""
+    manual_email_sent_once: bool = False
     conversion_order: List[str] = field(default_factory=list)
     conversion_statuses: Dict[str, str] = field(default_factory=dict)
     conversion_threads: Dict[str, int] = field(default_factory=dict)
@@ -918,6 +920,8 @@ class JobState:
             "progress_total": self.progress_total,
             "progress_percent": progress_percent,
             "email_delivery_status": self.email_delivery_status,
+            "manual_email_delivery_status": self.manual_email_delivery_status,
+            "manual_email_sent_once": self.manual_email_sent_once,
             "conversion_progress": [
                 {
                     "display_name": name,
@@ -1779,6 +1783,16 @@ def send_email(job_id: str) -> Response:
     raw_recipients = payload.get("recipients", [])
     subject_raw = payload.get("subject", "")
     body_raw = payload.get("body", "")
+    confirm_resend_raw = payload.get("confirm_resend", False)
+
+    if isinstance(confirm_resend_raw, bool):
+        confirm_resend = confirm_resend_raw
+    elif isinstance(confirm_resend_raw, (int, float)):
+        confirm_resend = bool(confirm_resend_raw)
+    elif isinstance(confirm_resend_raw, str):
+        confirm_resend = confirm_resend_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        confirm_resend = False
 
     def _clean_list(values: Iterable[object]) -> List[str]:
         cleaned: List[str] = []
@@ -1835,18 +1849,50 @@ def send_email(job_id: str) -> Response:
 
     with jobs_lock:
         job = jobs.get(job_id)
-    if not job or job.status != "completed" or not job.merged_pdf:
-        return jsonify({"error": "完了済みのジョブが見つかりません。"}), 400
-    if not job.merged_pdf.exists():
-        return jsonify({"error": "添付するPDFが見つかりません。"}), 404
+        if not job or job.status != "completed" or not job.merged_pdf:
+            return jsonify({"error": "完了済みのジョブが見つかりません。"}), 400
+        if not job.merged_pdf.exists():
+            return jsonify({"error": "添付するPDFが見つかりません。"}), 404
 
-    if not subject:
-        if job.report_number:
-            subject = f"第{job.report_number}回報告書"
-        else:
-            subject = "報告書"
+        current_manual_delivery_status = str(
+            job.manual_email_delivery_status or ""
+        ).strip().lower()
+        if current_manual_delivery_status == "sending":
+            return (
+                jsonify(
+                    {
+                        "error": "現在メール送信中です。完了後に再度ご確認ください。",
+                        "manual_email_delivery_status": "sending",
+                        "manual_email_sent_once": bool(job.manual_email_sent_once),
+                    }
+                ),
+                409,
+            )
 
-    _update_job(job_id, email_delivery_status="sending")
+        if bool(job.manual_email_sent_once) and not confirm_resend:
+            return (
+                jsonify(
+                    {
+                        "error": "既にメールを送信しています。再送するには「もう一度メールを送る」にチェックしてください。",
+                        "requires_resend_confirmation": True,
+                        "manual_email_delivery_status": str(
+                            job.manual_email_delivery_status or "sent"
+                        ),
+                        "manual_email_sent_once": True,
+                    }
+                ),
+                409,
+            )
+
+        if not subject:
+            if job.report_number:
+                subject = f"第{job.report_number}回報告書"
+            else:
+                subject = "報告書"
+
+        attachment_path = job.merged_pdf
+        job.manual_email_delivery_status = "sending"
+        job.updated_at = datetime.now(JST)
 
     delivery_status = "sent"
     failures: List[Dict[str, str]] = []
@@ -1857,20 +1903,27 @@ def send_email(job_id: str) -> Response:
             cc_recipients=cc_recipients,
             subject=subject,
             body=body,
-            attachment_path=job.merged_pdf,
+            attachment_path=attachment_path,
         )
     except Exception as exc:  # noqa: BLE001
         failures.append({"error": str(exc)})
         delivery_status = "failed"
 
-    _update_job(
-        job_id,
-        email_delivery_status="" if delivery_status == "partial" else delivery_status,
-    )
+    manual_email_sent_once = delivery_status in {"sent", "partial"}
+    with jobs_lock:
+        job = jobs.get(job_id)
+        if job:
+            job.manual_email_delivery_status = delivery_status
+            if manual_email_sent_once:
+                job.manual_email_sent_once = True
+            job.updated_at = datetime.now(JST)
 
     return jsonify(
         {
             "status": delivery_status,
+            "email_delivery_status": delivery_status,
+            "manual_email_delivery_status": delivery_status,
+            "manual_email_sent_once": manual_email_sent_once,
             "failures": failures,
             "to": to_recipients,
             "cc": cc_recipients,
