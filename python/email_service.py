@@ -22,14 +22,14 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.send"]
 
 def get_app_dir() -> Path:
     """
-    Return the directory where the application is located.
+    Return the base directory where runtime files should be stored.
 
     - When running as an exe (PyInstaller): directory of the executable
-    - When running as a Python script: directory of this file
+    - When running as a Python script: project root directory
     """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).parent
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
 
 @dataclass(slots=True)
@@ -48,6 +48,7 @@ class EmailConfig:
     @classmethod
     def from_env(cls) -> "EmailConfig":
         app_dir = get_app_dir()
+        credentials_dir = app_dir / "gmail_api_credentials"
         return cls(
             sender=os.getenv(
                 "EMAIL_SENDER", "roboken.report.tool@gmail.com"
@@ -58,13 +59,13 @@ class EmailConfig:
             credentials_json=Path(
                 os.getenv(
                     "GMAIL_CREDENTIALS_JSON",
-                    app_dir / "credentials.json",
+                    credentials_dir / "credentials.json",
                 )
             ),
             token_json=Path(
                 os.getenv(
                     "GMAIL_TOKEN_JSON",
-                    app_dir / "token.json",
+                    credentials_dir / "token.json",
                 )
             ),
         )
@@ -164,3 +165,6 @@ def send_email_with_attachment(
         userId="me",
         body={"raw": encoded_message},
     ).execute()
+
+
+

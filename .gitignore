@@ -7,5 +7,6 @@ test.patch
 build/
 dist/
 aspose-words-crack-limit2/
-token.json
-credentials.json
+gmail_api_credentials/token.json
+gmail_api_credentials/credentials.json
+

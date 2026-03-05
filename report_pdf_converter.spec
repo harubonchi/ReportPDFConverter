@@ -8,13 +8,14 @@ from PyInstaller.utils.hooks import collect_submodules
 
 
 PROJECT_ROOT = pathlib.Path(os.getcwd())
-ENTRY_SCRIPT = PROJECT_ROOT / "tray_launcher.py"
+ENTRY_SCRIPT = PROJECT_ROOT / "python" / "tray_launcher.py"
 
 DATAS = [
     (PROJECT_ROOT / "templates", "templates"),
     (PROJECT_ROOT / "static", "static"),
     (PROJECT_ROOT / "fonts", "fonts"),
-    (PROJECT_ROOT / "order.json", "."),
+    (PROJECT_ROOT / "lab_members" / "order.json", "lab_members"),
+    (PROJECT_ROOT / "lab_members" / "faculty_contacts.json", "lab_members"),
 ]
 
 
@@ -29,7 +30,7 @@ def _normalize_datas(entries):
 
 a = Analysis(
     [str(ENTRY_SCRIPT)],
-    pathex=[str(PROJECT_ROOT)],
+    pathex=[str(PROJECT_ROOT), str(PROJECT_ROOT / "python")],
     binaries=[],
     datas=_normalize_datas(DATAS),
     hiddenimports=collect_submodules("PyQt6"),
@@ -64,3 +65,4 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+

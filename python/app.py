@@ -52,11 +52,11 @@ JST = ZoneInfo("Asia/Tokyo")
 
 
 def _resolve_base_dir() -> Path:
-    """Return the directory containing the running application."""
+    """Return the project root directory used by the running app."""
 
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parent
+    return Path(__file__).resolve().parent.parent
 
 
 BASE_DIR = _resolve_base_dir()
@@ -104,10 +104,11 @@ _load_environment_variables()
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
 WORK_DIR = DATA_DIR / "work"
-ORDER_FILE = BASE_DIR / "order.json"
-FACULTY_CONTACTS_FILE = BASE_DIR / "faculty_contacts.json"
+LAB_MEMBERS_DIR = BASE_DIR / "lab_members"
+ORDER_FILE = LAB_MEMBERS_DIR / "order.json"
+FACULTY_CONTACTS_FILE = LAB_MEMBERS_DIR / "faculty_contacts.json"
 
-for directory in (UPLOAD_DIR, WORK_DIR):
+for directory in (UPLOAD_DIR, WORK_DIR, LAB_MEMBERS_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 
@@ -934,7 +935,11 @@ class JobState:
         }
 
 
-app = Flask(__name__)
+app = Flask(
+    __name__,
+    template_folder=str(BASE_DIR / "templates"),
+    static_folder=str(BASE_DIR / "static"),
+)
 app.secret_key = "pdf-report-converter"
 
 executor = ThreadPoolExecutor(max_workers=1)
@@ -2082,4 +2087,7 @@ def get_app():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8000)
+
+
+
 
