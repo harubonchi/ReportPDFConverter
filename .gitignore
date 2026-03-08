@@ -1,12 +1,17 @@
-__pycache__/
-data/uploads
-data/work
-.venv/
-test.patch
-.env
-build/
-dist/
-aspose-words-crack-limit2/
-gmail_api_credentials/token.json
-gmail_api_credentials/credentials.json
+# Rust
+Rust版/target/
+Rust版/dist/
+Rust版/data/
+Rust版/.env
+Rust版/tmp_prepare_test/
+Rust版/gmail_api_credentials/
+Python版/gmail_api_credentials/
 
+# Python build/cache remnants
+Python版/.venv/
+Python版/.uv-cache/
+Python版/build/
+Python版/dist/
+Python版/__pycache__/
+Python版/data/uploads/
+Python版/data/work/

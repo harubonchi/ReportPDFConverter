@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/static/favicon.svg"
+    />
+    <title>ロボ研報告書作成ツール - 並び替え</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+        margin: 2rem auto;
+        max-width: 840px;
+        color: #1f2933;
+        background: #f8fafc;
+      }
+      .credit {
+        position: fixed;
+        top: 0.75rem;
+        right: 1rem;
+        font-size: 0.75rem;
+        color: #64748b;
+        opacity: 0.85;
+      }
+      h1 {
+        color: #0b7285;
+      }
+      .container {
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        padding: 1.5rem;
+        background: #fff;
+        box-shadow: 0 12px 20px rgba(15, 23, 42, 0.08);
+      }
+      .instructions {
+        background: #e7f5ff;
+        border-left: 4px solid #0b7285;
+        padding: 1rem 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+      }
+      .team-board {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      .team-block {
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #fdfdfd;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+      }
+      .team-block:focus-within {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.25);
+      }
+      .team-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .team-summary {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .team-title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0b7285;
+      }
+      .team-count {
+        font-size: 0.85rem;
+        background: #0b7285;
+        color: #fff;
+        border-radius: 999px;
+        padding: 0.2rem 0.75rem;
+      }
+      .team-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .team-actions button {
+        background: #0b7285;
+        border: none;
+        color: #fff;
+        padding: 0.35rem 0.6rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .team-actions button.danger {
+        background: #fa5252;
+      }
+      .team-actions button.secondary {
+        background: #495057;
+      }
+      .document-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.65rem;
+      }
+      .document-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 0.6rem 0.9rem;
+        background: #fff;
+      }
+      .document-info {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+      .doc-title {
+        font-weight: 600;
+      }
+      .doc-team-label {
+        font-size: 0.8rem;
+        color: #495057;
+      }
+      .doc-actions {
+        display: flex;
+        gap: 0.35rem;
+      }
+      .doc-actions button {
+        background: #0b7285;
+        border: none;
+        color: #fff;
+        padding: 0.35rem 0.55rem;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      .doc-actions button.secondary {
+        background: #495057;
+      }
+      .doc-actions button.danger {
+        background: #fa5252;
+      }
+      .controls {
+        margin-top: 1.5rem;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+      }
+      .controls button {
+        background-color: #0b7285;
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        font-size: 1rem;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .controls button.secondary {
+        background: #495057;
+      }
+      .controls button:hover,
+      .doc-actions button:hover,
+      .team-actions button:hover {
+        opacity: 0.92;
+      }
+      @media (max-width: 640px) {
+        body {
+          margin: 1rem;
+        }
+        .doc-actions {
+          flex-wrap: wrap;
+          justify-content: flex-end;
+        }
+        .doc-actions button {
+          flex: 1 0 30%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="credit">制作者：石井遥紀 (2026年 修士卒業生)</div>
+    <h1>報告書の並び替え</h1>
+    <div class="instructions">
+      <p>
+        上下ボタンで班単位、個人単位の並び替えができます。発表の順番に合わせて調整してください。<br>
+        デフォルト順でソートされています。不要なファイルは「削除」ボタンで除外できます。班ごと不要な場合は班ヘッダーの「削除」で一括除外できます。
+      </p>
+    </div>
+
+    <div class="container">
+      <form action="/start" method="post" id="order-form">
+        <input type="hidden" name="job_id" value="{{ job_id }}" />
+        <input type="hidden" name="order" id="order-input" />
+
+        <div id="team-board" class="team-board">
+          {% for block in team_blocks %}
+            <div class="team-block" data-team-key="{{ block.key }}">
+              <div class="team-header">
+                <div class="team-summary">
+                  <span class="team-title">{{ block.label }}</span>
+                  <span class="team-count" data-count>{{ block.count }} 件</span>
+                </div>
+                <div class="team-actions">
+                  <button type="button" class="secondary team-move-up" aria-label="班を上に移動">▲</button>
+                  <button type="button" class="secondary team-move-down" aria-label="班を下に移動">▼</button>
+                  <button type="button" class="danger team-remove" aria-label="班を一覧から削除">削除</button>
+                </div>
+              </div>
+              <ul class="document-list">
+                {% for entry in block.entries %}
+                  <li
+                    class="document-item"
+                    data-name="{{ entry.display_name }}"
+                    data-team="{{ entry.team }}"
+                    data-persons='{{ entry.persons | json_encode | safe }}'
+                    draggable="false"
+                  >
+                    <div class="document-info">
+                      <span class="doc-title">{{ entry.display_name }}</span>
+                    </div>
+                    <div class="doc-actions">
+                      <button type="button" class="secondary move-up" aria-label="上に移動">▲</button>
+                      <button type="button" class="secondary move-down" aria-label="下に移動">▼</button>
+                      <button type="button" class="danger remove" aria-label="リストから削除">削除</button>
+                    </div>
+                  </li>
+                {% endfor %}
+              </ul>
+            </div>
+          {% endfor %}
+        </div>
+
+        <div class="controls">
+          <button
+            type="button"
+            class="secondary"
+            id="apply-default-order"
+          >ソート</button>
+          <button
+            type="button"
+            class="secondary"
+            id="open-default-order-editor"
+            data-editor-url="/default-order-editor"
+          >デフォルト順を編集</button>
+          <button type="button" class="secondary" id="reset-button">最初の状態に戻す</button>
+          <button type="submit">PDF 変換を開始</button>
+        </div>
+      </form>
+    </div>
+
+    <textarea id="initial-state" hidden>{{ initial_state_json }}</textarea>
+    <textarea id="default-member-sequences" hidden>
+      {{ default_member_sequences_json }}
+    </textarea>
+
+    <script>
+      const teamBoard = document.getElementById("team-board");
+      const orderInput = document.getElementById("order-input");
+      const resetButton = document.getElementById("reset-button");
+      const form = document.getElementById("order-form");
+      const initialStateElement = document.getElementById("initial-state");
+      const initialState = initialStateElement ? JSON.parse(initialStateElement.value || "[]") : [];
+      const defaultMemberSequencesElement = document.getElementById("default-member-sequences");
+      let defaultMemberSequences = defaultMemberSequencesElement
+        ? JSON.parse(defaultMemberSequencesElement.value || "{}")
+        : {};
+      let hasAppliedDefaultOrderInitially = false;
+      const applyDefaultOrderButton = document.getElementById("apply-default-order");
+      const openDefaultOrderEditorButton = document.getElementById("open-default-order-editor");
+
+      function updateOrderInput() {
+        const names = [];
+        teamBoard.querySelectorAll(".team-block").forEach((block) => {
+          block.querySelectorAll(".document-item").forEach((item) => {
+            names.push(item.dataset.name);
+          });
+        });
+        orderInput.value = names.join("|");
+      }
+
+      function updateTeamCounts(block) {
+        const countElement = block.querySelector("[data-count]");
+        if (countElement) {
+          const total = block.querySelectorAll(".document-item").length;
+          countElement.textContent = `${total} 件`;
+        }
+      }
+
+      function removeTeamBlockIfEmpty(block) {
+        if (block.querySelectorAll(".document-item").length === 0) {
+          block.remove();
+        }
+      }
+
+      function getPersonsFromDataset(item) {
+        const raw = item.dataset.persons;
+        if (!raw) {
+          return [];
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.map((value) => String(value));
+          }
+        } catch (error) {
+          console.warn("Failed to parse persons from dataset", error);
+        }
+        return [];
+      }
+
+      function normalizePersonToken(value) {
+        return String(value ?? "")
+          .trim()
+          .replace(/[\s・･.,，、．｡]+/g, "")
+          .toLowerCase();
+      }
+
+      function findMemberOrderIndex(persons, normalizedOrder) {
+        if (!Array.isArray(persons) || persons.length === 0 || normalizedOrder.length === 0) {
+          return null;
+        }
+
+        let bestIndex = null;
+        for (const person of persons) {
+          const normalizedPerson = normalizePersonToken(person);
+          if (!normalizedPerson) {
+            continue;
+          }
+          for (const item of normalizedOrder) {
+            if (!item.normalized) {
+              continue;
+            }
+            if (
+              normalizedPerson === item.normalized ||
+              normalizedPerson.includes(item.normalized) ||
+              item.normalized.includes(normalizedPerson)
+            ) {
+              if (bestIndex === null || item.index < bestIndex) {
+                bestIndex = item.index;
+              }
+              break;
+            }
+          }
+          if (bestIndex === 0) {
+            break;
+          }
+        }
+
+        return bestIndex;
+      }
+
+      function applyDefaultOrderToBlock(block) {
+        if (!block) {
+          return;
+        }
+        const teamKey = block.getAttribute("data-team-key") || "";
+        const defaultOrder = defaultMemberSequences[teamKey];
+        const items = Array.from(block.querySelectorAll(".document-item"));
+        if (!Array.isArray(defaultOrder) || defaultOrder.length === 0 || items.length === 0) {
+          return;
+        }
+
+        const normalizedOrder = [];
+        const seen = new Set();
+        defaultOrder.forEach((name, index) => {
+          const normalizedName = normalizePersonToken(name);
+          if (!normalizedName || seen.has(normalizedName)) {
+            return;
+          }
+          seen.add(normalizedName);
+          normalizedOrder.push({ normalized: normalizedName, index });
+        });
+        if (normalizedOrder.length === 0) {
+          return;
+        }
+
+        const fallbackPositions = new Map();
+        items.forEach((item, index) => {
+          fallbackPositions.set(item, index);
+        });
+
+        const getSortInfo = (item) => {
+          const persons = getPersonsFromDataset(item);
+          const matchedIndex = findMemberOrderIndex(persons, normalizedOrder);
+
+          const originalIndex = fallbackPositions.get(item) ?? Number.MAX_SAFE_INTEGER;
+          if (matchedIndex !== null && matchedIndex !== undefined) {
+            return {
+              recognized: true,
+              index: matchedIndex,
+              originalIndex,
+            };
+          }
+          return {
+            recognized: false,
+            index: Number.MAX_SAFE_INTEGER,
+            originalIndex,
+          };
+        };
+
+        items.sort((a, b) => {
+          const aInfo = getSortInfo(a);
+          const bInfo = getSortInfo(b);
+          if (aInfo.recognized !== bInfo.recognized) {
+            return aInfo.recognized ? -1 : 1;
+          }
+          if (aInfo.index !== bInfo.index) {
+            return aInfo.index - bInfo.index;
+          }
+          if (aInfo.originalIndex !== bInfo.originalIndex) {
+            return aInfo.originalIndex - bInfo.originalIndex;
+          }
+          return a.dataset.name.localeCompare(b.dataset.name, "ja");
+        });
+
+        const list = block.querySelector(".document-list");
+        items.forEach((item) => list.appendChild(item));
+        updateTeamCounts(block);
+      }
+
+      function applyDefaultOrderToAll() {
+        teamBoard.querySelectorAll(".team-block").forEach((block) => {
+          applyDefaultOrderToBlock(block);
+        });
+        updateOrderInput();
+      }
+
+      function refreshDefaultMemberSequences() {
+        fetch("/api/default-order")
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`Failed to load defaults: ${response.status}`);
+            }
+            return response.json();
+          })
+          .then((data) => {
+            if (data && data.member_sequences) {
+              defaultMemberSequences = data.member_sequences;
+            }
+          })
+          .catch((error) => {
+            console.warn("デフォルト順の取得に失敗しました", error);
+          });
+      }
+
+      function handleMove(item, direction) {
+        const sibling = direction === "up" ? item.previousElementSibling : item.nextElementSibling;
+        if (!sibling) {
+          return;
+        }
+        if (direction === "up") {
+          item.parentElement.insertBefore(item, sibling);
+        } else {
+          item.parentElement.insertBefore(sibling, item);
+        }
+        updateTeamCounts(item.closest(".team-block"));
+        updateOrderInput();
+      }
+
+      function handleTeamMove(block, direction) {
+        if (!block) {
+          return;
+        }
+        const sibling = direction === "up" ? block.previousElementSibling : block.nextElementSibling;
+        if (!sibling) {
+          return;
+        }
+        if (direction === "up") {
+          teamBoard.insertBefore(block, sibling);
+        } else {
+          teamBoard.insertBefore(sibling, block);
+        }
+        updateOrderInput();
+      }
+
+      teamBoard.addEventListener("click", (event) => {
+        const target = event.target.closest("button");
+        if (!target) {
+          return;
+        }
+        if (target.classList.contains("team-move-up") || target.classList.contains("team-move-down")) {
+          const teamBlock = target.closest(".team-block");
+          if (!teamBlock) {
+            return;
+          }
+          const direction = target.classList.contains("team-move-up") ? "up" : "down";
+          handleTeamMove(teamBlock, direction);
+          return;
+        }
+        if (target.classList.contains("team-remove")) {
+          const teamBlock = target.closest(".team-block");
+          if (!teamBlock) {
+            return;
+          }
+          teamBlock.remove();
+          updateOrderInput();
+          return;
+        }
+        const item = target.closest(".document-item");
+        const block = target.closest(".team-block");
+        if (!item || !block) {
+          return;
+        }
+        if (target.classList.contains("move-up")) {
+          handleMove(item, "up");
+        } else if (target.classList.contains("move-down")) {
+          handleMove(item, "down");
+        } else if (target.classList.contains("remove")) {
+          item.remove();
+          updateTeamCounts(block);
+          removeTeamBlockIfEmpty(block);
+          updateOrderInput();
+        }
+      });
+
+      function rebuildFromState(state) {
+        teamBoard.innerHTML = "";
+        state.forEach((team) => {
+          const block = document.createElement("div");
+          block.className = "team-block";
+          block.setAttribute("data-team-key", team.key);
+
+          const header = document.createElement("div");
+          header.className = "team-header";
+          const summary = document.createElement("div");
+          summary.className = "team-summary";
+          const title = document.createElement("span");
+          title.className = "team-title";
+          title.textContent = team.label;
+          const count = document.createElement("span");
+          count.className = "team-count";
+          count.setAttribute("data-count", "");
+          summary.appendChild(title);
+          summary.appendChild(count);
+          header.appendChild(summary);
+
+          const actions = document.createElement("div");
+          actions.className = "team-actions";
+          const upButton = document.createElement("button");
+          upButton.type = "button";
+          upButton.className = "secondary team-move-up";
+          upButton.setAttribute("aria-label", "班を上に移動");
+          upButton.textContent = "▲";
+          const downButton = document.createElement("button");
+          downButton.type = "button";
+          downButton.className = "secondary team-move-down";
+          downButton.setAttribute("aria-label", "班を下に移動");
+          downButton.textContent = "▼";
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "danger team-remove";
+          removeButton.setAttribute("aria-label", "班を一覧から削除");
+          removeButton.textContent = "削除";
+          actions.appendChild(upButton);
+          actions.appendChild(downButton);
+          actions.appendChild(removeButton);
+          header.appendChild(actions);
+          block.appendChild(header);
+
+            const list = document.createElement("ul");
+            list.className = "document-list";
+            team.entries.forEach((entry) => {
+              const item = document.createElement("li");
+              item.className = "document-item";
+              item.dataset.name = entry.display_name;
+              item.dataset.team = entry.team || "";
+              item.dataset.persons = JSON.stringify(entry.persons || []);
+              item.setAttribute("draggable", "false");
+
+              const info = document.createElement("div");
+              info.className = "document-info";
+              const titleSpan = document.createElement("span");
+            titleSpan.className = "doc-title";
+            titleSpan.textContent = entry.display_name;
+            info.appendChild(titleSpan);
+
+            const actions = document.createElement("div");
+            actions.className = "doc-actions";
+
+            const upButton = document.createElement("button");
+            upButton.type = "button";
+            upButton.className = "secondary move-up";
+            upButton.setAttribute("aria-label", "上に移動");
+            upButton.textContent = "▲";
+
+            const downButton = document.createElement("button");
+            downButton.type = "button";
+            downButton.className = "secondary move-down";
+            downButton.setAttribute("aria-label", "下に移動");
+            downButton.textContent = "▼";
+
+            const removeButton = document.createElement("button");
+            removeButton.type = "button";
+            removeButton.className = "danger remove";
+            removeButton.setAttribute("aria-label", "リストから削除");
+            removeButton.textContent = "削除";
+
+            actions.appendChild(upButton);
+            actions.appendChild(downButton);
+            actions.appendChild(removeButton);
+
+            item.appendChild(info);
+            item.appendChild(actions);
+            list.appendChild(item);
+          });
+
+          block.appendChild(list);
+          teamBoard.appendChild(block);
+          updateTeamCounts(block);
+        });
+        updateOrderInput();
+      }
+
+      resetButton.addEventListener("click", () => {
+        rebuildFromState(initialState);
+      });
+
+      if (applyDefaultOrderButton) {
+        applyDefaultOrderButton.addEventListener("click", () => {
+          applyDefaultOrderToAll();
+        });
+      }
+
+      const openDefaultOrderEditor = (targetUrl) => {
+        const isStandalone =
+          window.matchMedia && window.matchMedia("(display-mode: standalone)").matches;
+        const isIOSStandalone =
+          typeof window.navigator.standalone === "boolean" && window.navigator.standalone;
+        const screenObject = typeof window.screen === "object" ? window.screen : null;
+        const screenHeights = [];
+        if (screenObject) {
+          if (Number.isFinite(Number(screenObject.availHeight))) {
+            screenHeights.push(Number(screenObject.availHeight));
+          }
+          if (Number.isFinite(Number(screenObject.height))) {
+            screenHeights.push(Number(screenObject.height));
+          }
+        }
+        if (window.visualViewport && Number.isFinite(Number(window.visualViewport.height))) {
+          screenHeights.push(Number(window.visualViewport.height));
+        }
+        const viewportHeight = window.innerHeight
+          ? Number(window.innerHeight)
+          : document.documentElement
+          ? Number(document.documentElement.clientHeight || 0)
+          : 0;
+        if (viewportHeight) {
+          screenHeights.push(viewportHeight);
+        }
+        const fallbackHeight = screenHeights.length > 0 ? Math.max(...screenHeights) : 900;
+        const popupHeight = Math.max(360, Math.round(fallbackHeight * 0.95));
+        const popupFeatures = [
+          "width=680",
+          `height=${popupHeight}`,
+          "toolbar=no",
+          "location=no",
+          "status=no",
+          "menubar=no",
+          "scrollbars=yes",
+          "resizable=yes",
+        ].join(",");
+        const featureString = isStandalone || isIOSStandalone ? "" : popupFeatures;
+        const openedWindow = window.open(targetUrl, "_blank", featureString);
+        if (!openedWindow) {
+          const tempLink = document.createElement("a");
+          tempLink.href = targetUrl;
+          tempLink.target = "_blank";
+          tempLink.rel = "";
+          tempLink.style.display = "none";
+          document.body.appendChild(tempLink);
+          tempLink.click();
+          requestAnimationFrame(() => {
+            tempLink.remove();
+          });
+          console.warn("ポップアップがブロックされた可能性があります。", targetUrl);
+        }
+      };
+
+      if (openDefaultOrderEditorButton) {
+        openDefaultOrderEditorButton.addEventListener("click", () => {
+          const editorUrl = openDefaultOrderEditorButton.dataset.editorUrl;
+          if (!editorUrl) {
+            return;
+          }
+          const focusedBlock = document.activeElement
+            ? document.activeElement.closest && document.activeElement.closest(".team-block")
+            : null;
+          let teamKey = focusedBlock ? focusedBlock.getAttribute("data-team-key") : null;
+          if (!teamKey) {
+            const firstBlock = teamBoard.querySelector(".team-block");
+            teamKey = firstBlock ? firstBlock.getAttribute("data-team-key") : "";
+          }
+          const url = new URL(editorUrl, window.location.origin);
+          if (teamKey) {
+            url.searchParams.set("team", teamKey);
+          }
+          openDefaultOrderEditor(url.toString());
+        });
+      }
+
+      form.addEventListener("submit", (event) => {
+        updateOrderInput();
+        if (!orderInput.value) {
+          event.preventDefault();
+          alert("少なくとも1つのドキュメントを残してください。");
+        }
+      });
+
+      window.addEventListener("message", (event) => {
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        if (event.data && event.data.type === "default-order-updated") {
+          refreshDefaultMemberSequences();
+        }
+      });
+
+      rebuildFromState(initialState);
+      if (!hasAppliedDefaultOrderInitially) {
+        hasAppliedDefaultOrderInitially = true;
+        requestAnimationFrame(() => {
+          applyDefaultOrderToAll();
+        });
+      }
+    </script>
+  </body>
+</html>
+

@@ -1,0 +1,12 @@
+__pycache__/
+data/uploads
+data/work
+.venv/
+test.patch
+.env
+build/
+dist/
+aspose-words-crack-limit2/
+gmail_api_credentials/token.json
+gmail_api_credentials/credentials.json
+

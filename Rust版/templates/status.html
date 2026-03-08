@@ -1,0 +1,1445 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/static/favicon.svg"
+    />
+    <title>ロボ研報告書作成ツール - 進行状況</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 2rem auto;
+        max-width: 720px;
+        color: #1f2933;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .credit {
+        position: fixed;
+        top: 0.75rem;
+        right: 1rem;
+        font-size: 0.75rem;
+        color: #64748b;
+        opacity: 0.85;
+      }
+      h1 {
+        color: #0b7285;
+      }
+      .status-box {
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 1.25rem;
+        background: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .status-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .status-main {
+        display: flex;
+        flex-direction: column;
+        gap: 0.05rem;
+        flex: 1 1 auto;
+        min-width: 240px;
+      }
+      .status-main > * {
+        margin: 0;
+      }
+      .status-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+      }
+      .status-message {
+        font-style: italic;
+      }
+      .status-meta {
+        font-size: 0.95rem;
+        color: #475569;
+      }
+      .conversion-section {
+        margin-top: 1.75rem;
+      }
+      .conversion-section h2 {
+        margin: 0 0 0.75rem 0;
+        color: #0b7285;
+        font-size: 1.25rem;
+      }
+      .conversion-grid {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+      .conversion-item {
+        background: #fff;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 0.85rem 1rem;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+      }
+      .conversion-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.5rem;
+        font-weight: 600;
+        color: #0f172a;
+      }
+      .conversion-thread {
+        background: #e0f2fe;
+        color: #0369a1;
+        border-radius: 999px;
+        padding: 0.15rem 0.6rem;
+        font-size: 0.8rem;
+        white-space: nowrap;
+      }
+      .conversion-status {
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
+      .conversion-status.queued {
+        color: #475569;
+      }
+      .conversion-status.running {
+        color: #0b7285;
+      }
+      .conversion-status.completed {
+        color: #2b8a3e;
+      }
+      .conversion-status.failed {
+        color: #c92a2a;
+      }
+      .completed {
+        color: #2b8a3e;
+      }
+      .failed {
+        color: #c92a2a;
+      }
+      .email-template {
+        margin-top: 2rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #f1f5f9;
+        padding: 1.5rem;
+      }
+      .download-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #0b7285, #1098ad);
+        color: #fff;
+        text-decoration: none;
+        padding: 0.85rem 2.0rem;
+        border-radius: 10px;
+        font-weight: 700;
+        font-size: 1rem;
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.35);
+        white-space: nowrap;
+        width: auto;
+        flex-shrink: 0;
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+      }
+      .download-link:hover {
+        opacity: 0.96;
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px rgba(16, 152, 173, 0.45);
+      }
+      .download-link:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 8px 18px rgba(16, 152, 173, 0.32);
+      }
+      .email-template h2 {
+        margin-top: 0;
+        color: #0b7285;
+      }
+      .email-description {
+        margin: 0 0 1rem 0;
+        color: #334155;
+        font-size: 0.95rem;
+      }
+      .template-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .template-controls label {
+        display: flex;
+        flex-direction: column;
+        font-weight: 600;
+        color: #1f2937;
+        font-size: 0.95rem;
+      }
+      .template-controls select,
+      .template-controls input {
+        margin-top: 0.35rem;
+        padding: 0.5rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid #cbd5e1;
+        font-size: 1rem;
+      }
+      .custom-message-toggle {
+        margin: 0 0 0.7rem 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-weight: 600;
+        color: #1f2937;
+      }
+      #email-template-text {
+        width: 100%;
+        min-height: 8rem;
+        padding: 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        font-size: 1rem;
+        font-family: "Hiragino Sans", "Noto Sans JP", Arial, sans-serif;
+        background: #fff;
+        resize: vertical;
+        box-sizing: border-box;
+      }
+      .recipient-summary {
+        margin-top: 0.75rem;
+        padding: 0.75rem;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        background: #f8fafc;
+        color: #1f2937;
+      }
+      .email-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        align-items: center;
+        margin-top: 0.85rem;
+      }
+      #open-recipient-selector {
+        background: #495057;
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 0.6rem 1.25rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+      #send-email-button {
+        background: linear-gradient(135deg, #0b7285, #1098ad);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.65rem 1.35rem;
+        font-size: 1rem;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(16, 152, 173, 0.35);
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+      }
+      #send-email-button[hidden] {
+        display: none !important;
+      }
+      #open-recipient-selector:hover {
+        opacity: 0.9;
+      }
+      #send-email-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.45);
+      }
+      #send-email-button:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 6px 16px rgba(16, 152, 173, 0.3);
+      }
+      #send-email-button:disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+        transform: none;
+        box-shadow: none;
+      }
+      #email-send-feedback {
+        min-height: 1.2rem;
+        color: #1f2937;
+      }
+      #email-send-feedback.error {
+        color: #c92a2a;
+      }
+      #email-send-feedback.success {
+        color: #2b8a3e;
+      }
+      .email-delivery-status {
+        margin-top: 0.65rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid #cbd5e1;
+        background: #f8fafc;
+        color: #1f2937;
+      }
+      .email-delivery-status.sending {
+        background: #e7f5ff;
+        border-color: #b6e0fe;
+        color: #0b7285;
+      }
+      .email-delivery-status.sent {
+        background: #ebfbee;
+        border-color: #b2f2bb;
+        color: #2b8a3e;
+      }
+      .email-delivery-status.failed {
+        background: #fff5f5;
+        border-color: #ffc9c9;
+        color: #c92a2a;
+      }
+      .resend-confirm {
+        margin-top: 0.55rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        color: #334155;
+      }
+      .resend-confirm input[type="checkbox"] {
+        transform: translateY(-1px);
+      }
+      .email-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+      }
+      .email-hint {
+        margin: 0.35rem 0 0.75rem 0;
+        font-size: 0.95rem;
+        color: #0b7285;
+        background: #e7f5ff;
+        border: 1px solid #b6e0fe;
+        border-radius: 8px;
+        padding: 0.6rem 0.75rem;
+      }
+      .printer-section {
+        margin-top: 1.5rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        background: #f8fafc;
+        padding: 1.25rem 1.5rem;
+      }
+      .printer-section h2 {
+        margin-top: 0;
+        color: #0b7285;
+      }
+      .printer-description {
+        margin: 0.25rem 0 0.85rem 0;
+        color: #475569;
+      }
+      .printer-controls {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .printer-controls select {
+        min-width: 240px;
+        padding: 0.55rem 0.65rem;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+        font-size: 1rem;
+      }
+      .printer-controls button {
+        background: linear-gradient(135deg, #0b7285, #1098ad);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 0.6rem 1.0rem;
+        font-size: 0.95rem;
+        cursor: pointer;
+        box-shadow: 0 8px 20px rgba(16, 152, 173, 0.28);
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+      }
+      .printer-controls button.secondary {
+        background: #495057;
+        box-shadow: none;
+      }
+      .printer-controls button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(16, 152, 173, 0.36);
+      }
+      .printer-controls button:active {
+        transform: translateY(0px) scale(0.99);
+        box-shadow: 0 7px 16px rgba(16, 152, 173, 0.25);
+      }
+      .printer-feedback {
+        margin-top: 0.6rem;
+        color: #1f2937;
+        min-height: 1.4rem;
+      }
+      .printer-feedback.error {
+        color: #c92a2a;
+      }
+      .printer-feedback.success {
+        color: #2b8a3e;
+      }
+      @media (max-width: 640px) {
+        .template-controls {
+          flex-direction: column;
+        }
+        .template-controls label {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="credit">制作者：石井遥紀 (2026年 修士卒業生)</div>
+    <h1>処理状況</h1>
+    <p>
+      ジョブIDは <strong>{{ job_id }}</strong> です。<br>
+      処理が完了するまで進捗が自動更新されます。
+    </p>
+
+    <div class="status-box">
+      <div class="status-header">
+        <div class="status-main">
+          <div id="status" class="status-value">読み込み中…</div>
+          <div id="message" class="status-message" hidden></div>
+          <div id="timestamp" class="status-meta" hidden></div>
+        </div>
+        <a
+          id="download-link"
+          class="download-link"
+          rel="noopener"
+          download
+          hidden
+        ></a>
+      </div>
+    </div>
+
+    <div id="printer-section" class="printer-section" hidden>
+      <h2>プリンタで直接印刷</h2>
+      <p class="printer-description">
+        サーバに登録されているプリンタから選択し、生成したPDFを印刷します。
+      </p>
+      <div class="printer-controls">
+        <select id="printer-select" aria-label="プリンタを選択"></select>
+        <button type="button" id="refresh-printers" class="secondary">再読み込み</button>
+        <button type="button" id="print-button">印刷</button>
+      </div>
+      <div id="printer-feedback" class="printer-feedback" role="status" aria-live="polite"></div>
+    </div>
+
+    <section id="conversion-section" class="conversion-section" hidden>
+      <h2>ファイルごとの進捗</h2>
+      <div id="conversion-grid" class="conversion-grid" role="list"></div>
+    </section>
+
+    <div id="email-template-section" class="email-template" hidden>
+      <div class="email-header">
+        <div>
+          <h2>先生にメールを送る時の文章テンプレート</h2>
+          <p class="email-description">班・学年・名前を設定すると文面が自動で更新されます。任意文章入力にも切り替えできます。</p>
+        </div>
+      </div>
+      <div id="email-hint" class="email-hint">
+        班・学年・名前を入力し宛先を選択すると、PDFを添付したメールを送信できます。
+      </div>
+      <div class="template-controls">
+        <label>
+          班
+          <select id="team-select">
+            <option value="">（班を選択）</option>
+          </select>
+        </label>
+        <label>
+          学年
+          <select id="grade-select">
+            <option value="">（学年を選択）</option>
+            <option value="B3">B3</option>
+            <option value="B4">B4</option>
+            <option value="M1">M1</option>
+            <option value="M2">M2</option>
+          </select>
+        </label>
+        <label>
+          名前
+          <input type="text" id="name-input" placeholder="氏名を入力" />
+        </label>
+      </div>
+      <label class="custom-message-toggle">
+        <input type="checkbox" id="custom-message-toggle" />
+        任意の文章を入力する
+      </label>
+      <textarea id="email-template-text" rows="6" readonly></textarea>
+      <div class="email-actions">
+        <button
+          type="button"
+          id="open-recipient-selector"
+          data-recipient-url="/recipient-selector"
+        >
+          宛先を選択
+        </button>
+        <button type="button" id="send-email-button" hidden>メールを送信</button>
+      </div>
+      <div id="email-delivery-status" class="email-delivery-status" role="status" aria-live="polite" hidden></div>
+      <label id="resend-confirm-wrapper" class="resend-confirm" hidden>
+        <input type="checkbox" id="confirm-resend" />
+        もう一度メールを送る（再送）
+      </label>
+      <div id="recipient-summary" class="recipient-summary" hidden></div>
+      <div id="email-send-feedback" role="status" aria-live="polite"></div>
+    </div>
+
+    <script>
+      const jobId = "{{ job_id }}";
+      const statusUrl = "/status/{{ job_id }}";
+      const statusLabels = {
+        queued: "待機中",
+        running: "処理中",
+        completed: "完了",
+        failed: "失敗",
+      };
+      const printerSection = document.getElementById("printer-section");
+      const printerSelect = document.getElementById("printer-select");
+      const refreshPrintersButton = document.getElementById("refresh-printers");
+      const printButton = document.getElementById("print-button");
+      const printerFeedback = document.getElementById("printer-feedback");
+      let printersLoaded = false;
+      let printersLoading = false;
+      let lastPrinters = [];
+      const emailSection = document.getElementById("email-template-section");
+      const teamSelect = document.getElementById("team-select");
+      const gradeSelect = document.getElementById("grade-select");
+      const nameInput = document.getElementById("name-input");
+      const emailHint = document.getElementById("email-hint");
+      const customMessageToggle = document.getElementById("custom-message-toggle");
+      const emailTextArea = document.getElementById("email-template-text");
+      const openRecipientSelectorButton = document.getElementById("open-recipient-selector");
+      const sendEmailButton = document.getElementById("send-email-button");
+      const recipientSummary = document.getElementById("recipient-summary");
+      const emailSendFeedback = document.getElementById("email-send-feedback");
+      const emailDeliveryStatusElement = document.getElementById("email-delivery-status");
+      const resendConfirmWrapper = document.getElementById("resend-confirm-wrapper");
+      const resendConfirmCheckbox = document.getElementById("confirm-resend");
+      const conversionSection = document.getElementById("conversion-section");
+      const conversionGrid = document.getElementById("conversion-grid");
+      const downloadLink = document.getElementById("download-link");
+      if (downloadLink) {
+        downloadLink.hidden = true;
+        downloadLink.style.display = "none";
+      }
+      const conversionStatusLabels = {
+        queued: "待機中",
+        running: "処理中",
+        completed: "完了",
+        failed: "失敗",
+      };
+      const recipientSelectorUrl =
+        (openRecipientSelectorButton && openRecipientSelectorButton.dataset.recipientUrl) || "";
+      let selectedRecipients = [];
+      let teamOptionsInitialized = false;
+      let currentReportNumber = "";
+      let latestEmailDeliveryStatus = "";
+      let sendingEmail = false;
+      let hasManualSendAttempt = false;
+      let resendConfirmationRequired = false;
+      let manualSendCompleted = false;
+      let customMessageTouched = false;
+      const downloadUrl = "/download/{{ job_id }}";
+      const defaultSendButtonLabel = sendEmailButton ? sendEmailButton.textContent : "メールを送信";
+
+      function populateTeamOptions(options) {
+        if (!teamSelect || teamOptionsInitialized) {
+          return;
+        }
+        const uniqueOptions = Array.from(
+          new Set(
+            Array.isArray(options)
+              ? options
+                  .map((option) => (typeof option === "string" ? option.trim() : ""))
+                  .filter((option) => option)
+              : []
+          )
+        );
+        teamSelect.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "（班を選択）";
+        teamSelect.appendChild(placeholder);
+        uniqueOptions.forEach((option) => {
+          const element = document.createElement("option");
+          element.value = option;
+          element.textContent = option;
+          teamSelect.appendChild(element);
+        });
+        teamSelect.value = "";
+        teamOptionsInitialized = true;
+      }
+
+      function formatTeamLabel(value) {
+        const trimmed = value.trim();
+        if (!trimmed) {
+          return "◯◯班";
+        }
+        if (trimmed === "班なし") {
+          return trimmed;
+        }
+        return trimmed.endsWith("班") ? trimmed : `${trimmed}班`;
+      }
+
+      function isCustomMessageEnabled() {
+        return Boolean(customMessageToggle && customMessageToggle.checked);
+      }
+
+      function buildDefaultEmailText() {
+        const teamValue = teamSelect ? teamSelect.value || "" : "";
+        const gradeValue = gradeSelect ? gradeSelect.value || "" : "";
+        const nameValue = nameInput ? nameInput.value.trim() : "";
+
+        const teamLabel = teamValue ? formatTeamLabel(teamValue) : "◯◯班";
+        const gradeLabel = gradeValue ? `${gradeValue}の` : "（学年）の";
+        const nameLabel = nameValue || "(名前)";
+
+        return `お世話になっております。${teamLabel}${gradeLabel}${nameLabel}です。\n第${currentReportNumber}回報告書を添付しております。\nよろしくお願いいたします。`;
+      }
+
+      function updateEmailHint() {
+        if (!emailHint) {
+          return;
+        }
+        if (isCustomMessageEnabled()) {
+          emailHint.textContent =
+            "任意文章入力が有効です。宛先を選択すれば、班・学年・名前が未入力でも送信できます。";
+          return;
+        }
+        emailHint.textContent =
+          "班・学年・名前を入力し宛先を選択すると、PDFを添付したメールを送信できます。";
+      }
+
+      function applyCustomMessageMode() {
+        if (!emailTextArea) {
+          return;
+        }
+        const customEnabled = isCustomMessageEnabled();
+        emailTextArea.readOnly = !customEnabled;
+        if (customEnabled && !emailTextArea.value.trim() && currentReportNumber) {
+          emailTextArea.value = buildDefaultEmailText();
+        }
+        customMessageTouched = false;
+        updateEmailText();
+      }
+
+      function updateEmailText() {
+        if (!emailTextArea) {
+          return;
+        }
+        if (!currentReportNumber) {
+          emailTextArea.value = "";
+          updateEmailHint();
+          updateSendButtonVisibility();
+          return;
+        }
+        if (isCustomMessageEnabled()) {
+          if (!customMessageTouched && !emailTextArea.value.trim()) {
+            emailTextArea.value = buildDefaultEmailText();
+          }
+          updateEmailHint();
+          updateSendButtonVisibility();
+          return;
+        }
+        customMessageTouched = false;
+        emailTextArea.value = buildDefaultEmailText();
+        updateEmailHint();
+        updateSendButtonVisibility();
+      }
+
+      function updateRecipientSummary() {
+        if (!recipientSummary) {
+          return;
+        }
+        if (!selectedRecipients.length) {
+          recipientSummary.hidden = true;
+          recipientSummary.textContent = "";
+          return;
+        }
+        const classify = classifyRecipients(selectedRecipients);
+        const toDisplay = classify.to.map((item) => item.toDisplay).join(", ");
+        const ccDisplay = classify.cc.map((item) => item.toDisplay).join(", ");
+        const parts = [];
+        if (toDisplay) {
+          parts.push(`To: ${toDisplay}`);
+        }
+        if (ccDisplay) {
+          parts.push(`Cc: ${ccDisplay}`);
+        }
+        recipientSummary.textContent =
+          `宛先 (${selectedRecipients.length}件): ` + (parts.join(" / ") || "未選択");
+        recipientSummary.hidden = false;
+      }
+
+      function normalizeEmailDeliveryStatus(value) {
+        return typeof value === "string" ? value.trim().toLowerCase() : "";
+      }
+
+      function requiresResendConfirmation(status) {
+        return status === "sent" || status === "partial";
+      }
+
+      function updateEmailDeliveryStatus(statusRaw) {
+        const status = normalizeEmailDeliveryStatus(statusRaw);
+        latestEmailDeliveryStatus = status;
+
+        if (!hasManualSendAttempt) {
+          if (emailDeliveryStatusElement) {
+            emailDeliveryStatusElement.classList.remove("sending", "sent", "failed");
+            emailDeliveryStatusElement.textContent = "";
+            emailDeliveryStatusElement.hidden = true;
+          }
+          return;
+        }
+
+        if (emailDeliveryStatusElement) {
+          emailDeliveryStatusElement.classList.remove("sending", "sent", "failed");
+          let message = "送信状態: 未送信";
+          if (status === "sending") {
+            message = "送信状態: メール送信処理を実行中です…";
+            emailDeliveryStatusElement.classList.add("sending");
+          } else if (status === "sent" || status === "partial") {
+            message = "送信状態: メール送信処理を実行しました。";
+            emailDeliveryStatusElement.classList.add("sent");
+          } else if (status === "failed") {
+            message = "送信状態: メール送信処理でエラーが発生しました。";
+            emailDeliveryStatusElement.classList.add("failed");
+          }
+          emailDeliveryStatusElement.textContent = message;
+          emailDeliveryStatusElement.hidden = !currentReportNumber;
+        }
+      }
+
+      function updateSendButtonVisibility() {
+        if (!sendEmailButton) {
+          return;
+        }
+        const customMessageEnabled = isCustomMessageEnabled();
+        const hasName = Boolean(nameInput && nameInput.value.trim());
+        const hasRecipients = selectedRecipients.length > 0;
+        const hasBody = Boolean(emailTextArea && emailTextArea.value.trim());
+        const ready =
+          hasRecipients &&
+          Boolean(currentReportNumber) &&
+          hasBody &&
+          (customMessageEnabled || hasName);
+        const resendRequired = resendConfirmationRequired && manualSendCompleted;
+        const resendChecked = Boolean(resendConfirmCheckbox && resendConfirmCheckbox.checked);
+
+        sendEmailButton.hidden = !ready;
+        sendEmailButton.disabled = !ready || sendingEmail || (resendRequired && !resendChecked);
+        sendEmailButton.textContent = sendingEmail ? "送信中…" : defaultSendButtonLabel;
+
+        if (!resendRequired && resendConfirmCheckbox) {
+          resendConfirmCheckbox.checked = false;
+        }
+        if (resendConfirmWrapper) {
+          resendConfirmWrapper.hidden = !ready || !resendRequired;
+        }
+
+        if (openRecipientSelectorButton) {
+          openRecipientSelectorButton.disabled = !currentReportNumber || sendingEmail;
+        }
+      }
+
+      function classifyRecipients(recipients) {
+        const to = [];
+        const cc = [];
+        const toSeen = new Set();
+        const ccSeen = new Set();
+
+        const pushUnique = (bucket, seen, email, display, preferred) => {
+          if (seen.has(email)) {
+            return;
+          }
+          seen.add(email);
+          bucket.push({ email, toDisplay: display, preferred });
+        };
+
+        (Array.isArray(recipients) ? recipients : []).forEach((item) => {
+          if (!item || typeof item !== "object") {
+            return;
+          }
+          const email = String(item.email || "").trim();
+          if (!email) {
+            return;
+          }
+          const name = String(item.name || "").trim();
+          const preferredRaw = String(item.preferred || "").trim().toLowerCase();
+          const display = name ? `${name} <${email}>` : email;
+          if (preferredRaw === "to") {
+            pushUnique(to, toSeen, email, display, "to");
+          } else {
+            pushUnique(cc, ccSeen, email, display, preferredRaw || "cc");
+          }
+        });
+
+        if (!to.length && cc.length) {
+          // To が空なら全員 To へ
+          cc.forEach((item) => {
+            if (!toSeen.has(item.email)) {
+              toSeen.add(item.email);
+              to.push(item);
+            }
+          });
+          cc.length = 0;
+        }
+
+        return { to, cc };
+      }
+
+      if (teamSelect) {
+        teamSelect.addEventListener("change", updateEmailText);
+      }
+      if (gradeSelect) {
+        gradeSelect.addEventListener("change", updateEmailText);
+      }
+      if (nameInput) {
+        nameInput.addEventListener("input", updateEmailText);
+      }
+      if (customMessageToggle) {
+        customMessageToggle.addEventListener("change", applyCustomMessageMode);
+      }
+      if (emailTextArea) {
+        emailTextArea.addEventListener("input", () => {
+          if (isCustomMessageEnabled()) {
+            customMessageTouched = true;
+            updateSendButtonVisibility();
+          }
+        });
+      }
+      if (openRecipientSelectorButton) {
+        openRecipientSelectorButton.addEventListener("click", openRecipientSelector);
+      }
+      if (sendEmailButton) {
+        sendEmailButton.addEventListener("click", sendEmail);
+      }
+      if (resendConfirmCheckbox) {
+        resendConfirmCheckbox.addEventListener("change", updateSendButtonVisibility);
+      }
+      updateEmailHint();
+      applyCustomMessageMode();
+      function openRecipientSelector() {
+        if (!recipientSelectorUrl) {
+          return;
+        }
+        const heights = [];
+        if (window.screen) {
+          if (Number.isFinite(Number(window.screen.availHeight))) {
+            heights.push(Number(window.screen.availHeight));
+          }
+          if (Number.isFinite(Number(window.screen.height))) {
+            heights.push(Number(window.screen.height));
+          }
+        }
+        if (window.visualViewport && Number.isFinite(Number(window.visualViewport.height))) {
+          heights.push(Number(window.visualViewport.height));
+        }
+        if (window.innerHeight) {
+          heights.push(Number(window.innerHeight));
+        }
+        const popupHeight = Math.max(360, Math.round((heights.length ? Math.max(...heights) : 900) * 0.9));
+        const popupFeatures = [
+          "width=720",
+          `height=${popupHeight}`,
+          "toolbar=no",
+          "location=no",
+          "status=no",
+          "menubar=no",
+          "scrollbars=yes",
+          "resizable=yes",
+        ].join(",");
+        const opened = window.open(recipientSelectorUrl, "_blank", popupFeatures);
+        if (!opened) {
+          const link = document.createElement("a");
+          link.href = recipientSelectorUrl;
+          link.target = "_blank";
+          link.rel = "";
+          link.style.display = "none";
+          document.body.appendChild(link);
+          link.click();
+          requestAnimationFrame(() => link.remove());
+        }
+      }
+
+      function setEmailFeedback(message, type = "") {
+        if (!emailSendFeedback) {
+          return;
+        }
+        emailSendFeedback.textContent = message || "";
+        emailSendFeedback.classList.remove("error", "success");
+        if (type) {
+          emailSendFeedback.classList.add(type);
+        }
+      }
+
+      async function sendEmail() {
+        if (!sendEmailButton || !emailTextArea) {
+          return;
+        }
+
+        const resendRequired = resendConfirmationRequired && manualSendCompleted;
+        const resendConfirmed = Boolean(resendConfirmCheckbox && resendConfirmCheckbox.checked);
+        if (resendRequired && !resendConfirmed) {
+          setEmailFeedback("再送する場合は「もう一度メールを送る（再送）」にチェックしてください。", "error");
+          updateSendButtonVisibility();
+          return;
+        }
+
+        const classified = classifyRecipients(selectedRecipients);
+        const toList = classified.to.map((item) => item.email);
+        const ccList = classified.cc.map((item) => item.email);
+        const hasAny = toList.length + ccList.length > 0;
+        if (!hasAny) {
+          setEmailFeedback("宛先を選択してください。", "error");
+          return;
+        }
+
+        const subject = currentReportNumber ? `第${currentReportNumber}回報告書` : "報告書";
+        const body = emailTextArea.value || "";
+
+        hasManualSendAttempt = true;
+        resendConfirmationRequired = false;
+        manualSendCompleted = false;
+        sendingEmail = true;
+        updateEmailDeliveryStatus("sending");
+        updateSendButtonVisibility();
+        setEmailFeedback("", "");
+
+        try {
+          const response = await fetch(`/send-email/${encodeURIComponent(jobId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              recipients: { to: toList, cc: ccList },
+              subject,
+              body,
+              confirm_resend: resendConfirmed,
+            }),
+          });
+
+          let data = {};
+          try {
+            data = await response.json();
+          } catch (error) {
+            data = {};
+          }
+
+          if (!response.ok || (data && data.error)) {
+            const message = (data && data.error) || "メール送信に失敗しました。";
+            setEmailFeedback(message, "error");
+            if (data && data.requires_resend_confirmation) {
+              hasManualSendAttempt = true;
+              resendConfirmationRequired = true;
+              manualSendCompleted = true;
+            }
+            if (data && data.manual_email_sent_once) {
+              hasManualSendAttempt = true;
+              resendConfirmationRequired = true;
+              manualSendCompleted = true;
+            }
+            if (data && data.manual_email_delivery_status) {
+              updateEmailDeliveryStatus(data.manual_email_delivery_status);
+            } else if (data && data.email_delivery_status) {
+              updateEmailDeliveryStatus(data.email_delivery_status);
+            } else {
+              updateEmailDeliveryStatus("failed");
+            }
+            return;
+          }
+
+          const deliveryStatus = normalizeEmailDeliveryStatus(
+            data.manual_email_delivery_status || data.status || ""
+          );
+          manualSendCompleted = true;
+          if (deliveryStatus === "failed") {
+            resendConfirmationRequired = false;
+            setEmailFeedback("メール送信に失敗しました。時間をおいて再度お試しください。", "error");
+            updateEmailDeliveryStatus("failed");
+          } else if (deliveryStatus === "partial") {
+            resendConfirmationRequired = true;
+            setEmailFeedback("一部の宛先への送信に失敗しました。", "error");
+            updateEmailDeliveryStatus("partial");
+          } else {
+            resendConfirmationRequired = true;
+            setEmailFeedback("", "");
+            updateEmailDeliveryStatus("sent");
+          }
+
+          if (resendConfirmCheckbox) {
+            resendConfirmCheckbox.checked = false;
+          }
+        } catch (error) {
+          resendConfirmationRequired = false;
+          manualSendCompleted = false;
+          setEmailFeedback("メール送信時にエラーが発生しました。", "error");
+          updateEmailDeliveryStatus("failed");
+        } finally {
+          sendingEmail = false;
+          updateSendButtonVisibility();
+        }
+      }
+
+      function setPrinterFeedback(message, type = "") {
+        if (!printerFeedback) {
+          return;
+        }
+        printerFeedback.textContent = message || "";
+        printerFeedback.classList.remove("error", "success");
+        if (type) {
+          printerFeedback.classList.add(type);
+        }
+      }
+
+      function populatePrinters(printers) {
+        if (!printerSelect) {
+          return;
+        }
+        printerSelect.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = "（プリンタを選択）";
+        printerSelect.appendChild(placeholder);
+
+        const list = Array.isArray(printers) ? printers : [];
+        lastPrinters = list;
+        list.forEach((printer) => {
+          const name = typeof printer?.name === "string" ? printer.name.trim() : "";
+          if (!name) {
+            return;
+          }
+          const colorSupported = Boolean(printer.color_supported);
+          const duplexSupported = Boolean(printer.duplex_supported);
+          const notes = [];
+          if (!colorSupported) {
+            notes.push("白黒のみ");
+          }
+          if (!duplexSupported) {
+            notes.push("片面のみ");
+          }
+          const recommended = colorSupported && duplexSupported;
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = recommended
+            ? `${name}（推奨：カラー・両面）`
+            : notes.length
+              ? `${name}（${notes.join("・")}）`
+              : name;
+          option.dataset.colorSupported = String(colorSupported);
+          option.dataset.duplexSupported = String(duplexSupported);
+          option.dataset.warnings = Array.isArray(printer.warnings)
+            ? printer.warnings.join(" / ")
+            : "";
+          if (printer.is_default) {
+            option.selected = true;
+          }
+          printerSelect.appendChild(option);
+        });
+        printersLoaded = true;
+        if (!printerSelect.value && printerSelect.options.length > 1) {
+          printerSelect.selectedIndex = 1;
+        }
+        updatePrinterSelectionNote();
+      }
+
+      async function fetchPrinters(force = false) {
+        if (printersLoading || (!force && printersLoaded)) {
+          return;
+        }
+        printersLoading = true;
+        setPrinterFeedback("プリンタを読み込み中です…", "");
+        try {
+          const response = await fetch("/api/printers", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`Failed to load printers (${response.status})`);
+          }
+          const data = await response.json();
+          populatePrinters(data?.printers || []);
+          if (!data?.printers || data.printers.length === 0) {
+            setPrinterFeedback(
+              "利用可能なプリンタが見つかりませんでした（Windows標準の仮想プリンタは除外されています）。",
+              "error"
+            );
+          } else {
+            setPrinterFeedback("", "");
+          }
+        } catch (error) {
+          setPrinterFeedback("プリンタの取得に失敗しました。再読み込みを試してください。", "error");
+        } finally {
+          printersLoading = false;
+        }
+      }
+
+      function showPrinterSection(shouldShow) {
+        if (!printerSection) {
+          return;
+        }
+        printerSection.hidden = !shouldShow;
+        if (shouldShow && !printersLoaded && !printersLoading) {
+          fetchPrinters(true);
+        }
+        if (!shouldShow) {
+          setPrinterFeedback("", "");
+        }
+      }
+
+      function updatePrinterSelectionNote() {
+        if (!printerSelect || !printerFeedback) {
+          return;
+        }
+        const selected = printerSelect.selectedOptions
+          ? printerSelect.selectedOptions[0]
+          : null;
+        if (!selected || !selected.value) {
+          setPrinterFeedback("プリンタを選択してください。", "error");
+          return;
+        }
+        const colorSupported = selected.dataset.colorSupported === "true";
+        const duplexSupported = selected.dataset.duplexSupported === "true";
+        const warnings = selected.dataset.warnings || "";
+        if (!colorSupported || !duplexSupported) {
+          const messages = [];
+          if (!colorSupported) {
+            messages.push("カラー非対応: 白黒で印刷されます。");
+          }
+          if (!duplexSupported) {
+            messages.push("両面非対応: 片面印刷になります。");
+          }
+          setPrinterFeedback(messages.join(" "), "error");
+        } else {
+          setPrinterFeedback("カラー・両面（長辺とじ）で印刷できます。", "success");
+        }
+        if (warnings) {
+          setPrinterFeedback(warnings, "error");
+        }
+      }
+
+      async function submitPrintRequest() {
+        if (!printButton || !printerSelect) {
+          return;
+        }
+        const printerName = printerSelect.value || "";
+        if (!printerName) {
+          setPrinterFeedback("プリンタを選択してください。", "error");
+          return;
+        }
+        setPrinterFeedback("印刷要求を送信しています…", "");
+        printButton.disabled = true;
+        try {
+          const response = await fetch(`/print/${encodeURIComponent(jobId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ printer_name: printerName }),
+          });
+          const data = await response.json();
+          if (!response.ok || (data && data.error)) {
+            const message = (data && data.error) || "印刷に失敗しました。";
+            setPrinterFeedback(message, "error");
+            return;
+          }
+          setPrinterFeedback(`「${data.printer || printerName}」に印刷を送信しました。`, "success");
+          updatePrinterSelectionNote();
+        } catch (error) {
+          setPrinterFeedback("印刷の送信に失敗しました。接続を確認してください。", "error");
+        } finally {
+          printButton.disabled = false;
+        }
+      }
+
+      if (printButton) {
+        printButton.addEventListener("click", submitPrintRequest);
+      }
+      if (refreshPrintersButton) {
+        refreshPrintersButton.addEventListener("click", () => {
+          printersLoaded = false;
+          fetchPrinters(true);
+        });
+      }
+      if (printerSelect) {
+        printerSelect.addEventListener("change", updatePrinterSelectionNote);
+      }
+
+      function updateConversionProgress(entries, shouldShow) {
+        if (!conversionSection || !conversionGrid) {
+          return;
+        }
+        conversionGrid.innerHTML = "";
+        if (!shouldShow) {
+          conversionSection.hidden = true;
+          return;
+        }
+        const items = Array.isArray(entries)
+          ? entries.filter((entry) => entry && typeof entry === "object")
+          : [];
+        if (!items.length) {
+          conversionSection.hidden = true;
+          return;
+        }
+        const fragment = document.createDocumentFragment();
+        items.forEach((entry) => {
+          const displayName = typeof entry.display_name === "string"
+            ? entry.display_name
+            : "(ファイル名未取得)";
+          const statusKey = typeof entry.status === "string"
+            ? entry.status.toLowerCase()
+            : "queued";
+          const statusLabel = conversionStatusLabels[statusKey] || statusKey;
+          const statusClass = ["queued", "running", "completed", "failed"].includes(statusKey)
+            ? statusKey
+            : "queued";
+          const card = document.createElement("article");
+          card.className = "conversion-item";
+          card.setAttribute("role", "listitem");
+
+          const header = document.createElement("div");
+          header.className = "conversion-header";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.textContent = displayName;
+          header.appendChild(nameSpan);
+
+          if (typeof entry.thread === "number" && entry.thread > 0) {
+            const threadBadge = document.createElement("span");
+            threadBadge.className = "conversion-thread";
+            threadBadge.textContent = `スレッド${entry.thread}`;
+            header.appendChild(threadBadge);
+          }
+
+          const statusSpan = document.createElement("span");
+          statusSpan.className = `conversion-status ${statusClass}`;
+          statusSpan.textContent = statusLabel;
+
+          card.appendChild(header);
+          card.appendChild(statusSpan);
+          fragment.appendChild(card);
+        });
+
+        conversionGrid.appendChild(fragment);
+        conversionSection.hidden = false;
+      }
+
+      let isRefreshing = false;
+      let consecutiveNetworkErrors = 0;
+
+      async function refreshStatus() {
+        if (isRefreshing) {
+          // 多重起動を避ける（積み上がり防止）
+          return;
+        }
+        isRefreshing = true;
+        // リクエストが応答しないまま固まるのを防ぐため、明示的なタイムアウトとキャッシュ無効化を行う
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000); // 3秒で中断
+        // キャッシュを完全に避けるためクエリに時刻を付与し、fetch側も no-store を指定
+        const url = `${statusUrl}?t=${Date.now()}`;
+        try {
+          const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+          if (!response.ok) {
+            throw new Error("ステータスを取得できませんでした");
+          }
+          const data = await response.json();
+          let shouldStopPolling = false;
+          const statusElement = document.getElementById("status");
+          const messageElement = document.getElementById("message");
+          const timestampElement = document.getElementById("timestamp");
+          const emailDeliveryStatusRaw =
+            typeof data.email_delivery_status === "string"
+              ? data.email_delivery_status.trim().toLowerCase()
+              : "";
+          const manualEmailDeliveryStatusRaw =
+            typeof data.manual_email_delivery_status === "string"
+              ? data.manual_email_delivery_status.trim().toLowerCase()
+              : "";
+
+          statusElement.textContent = statusLabels[data.status] || data.status;
+          statusElement.className = "status-value " + data.status;
+          const messageText =
+            typeof data.message === "string" ? data.message.trim() : "";
+          if (messageElement) {
+            if (messageText) {
+              messageElement.textContent = messageText;
+              messageElement.hidden = false;
+            } else {
+              messageElement.textContent = "";
+              messageElement.hidden = true;
+            }
+          }
+
+          let updatedAtText = "";
+          if (data.updated_at) {
+            updatedAtText =
+              "更新日時: " +
+              new Date(data.updated_at).toLocaleString("ja-JP", {
+                timeZone: "Asia/Tokyo",
+              });
+          }
+          let metaText = updatedAtText;
+
+          const shouldShowConversion = Boolean(data.show_conversion_progress);
+          updateConversionProgress(data.conversion_progress, shouldShowConversion);
+
+          if (!teamOptionsInitialized && data.team_options) {
+            populateTeamOptions(data.team_options);
+          }
+
+          if (data.status === "completed") {
+            const reportNumberRaw =
+              typeof data.report_number === "string" ? data.report_number.trim() : "";
+            const shouldShowCompletionDetails = reportNumberRaw.length > 0;
+            currentReportNumber = shouldShowCompletionDetails ? reportNumberRaw : "";
+            if (downloadLink) {
+              if (shouldShowCompletionDetails) {
+                const fileName =
+                  typeof data.final_pdf_name === "string" ? data.final_pdf_name.trim() : "";
+                downloadLink.textContent = `第${currentReportNumber}回報告書をダウンロード`;
+                downloadLink.href = `${downloadUrl}?t=${Date.now()}`;
+                if (fileName) {
+                  downloadLink.setAttribute("download", fileName);
+                } else {
+                  downloadLink.removeAttribute("download");
+                }
+                downloadLink.hidden = false;
+                downloadLink.style.display = "inline-flex";
+              } else {
+                downloadLink.hidden = true;
+                downloadLink.style.display = "none";
+                downloadLink.textContent = "";
+                downloadLink.removeAttribute("href");
+                downloadLink.removeAttribute("download");
+              }
+            }
+            if (emailSection) {
+              emailSection.hidden = !shouldShowCompletionDetails;
+            }
+            if (shouldShowCompletionDetails) {
+              if (hasManualSendAttempt) {
+                hasManualSendAttempt = true;
+                sendingEmail = manualEmailDeliveryStatusRaw === "sending";
+                resendConfirmationRequired = requiresResendConfirmation(
+                  manualEmailDeliveryStatusRaw
+                );
+                manualSendCompleted = manualEmailDeliveryStatusRaw !== "sending";
+                updateEmailDeliveryStatus(manualEmailDeliveryStatusRaw);
+              } else {
+                sendingEmail = false;
+                resendConfirmationRequired = false;
+                manualSendCompleted = false;
+                updateEmailDeliveryStatus("");
+              }
+              updateEmailText();
+              updateSendButtonVisibility();
+              if (
+                emailDeliveryStatusRaw === "sent" ||
+                emailDeliveryStatusRaw === "failed" ||
+                !emailDeliveryStatusRaw
+              ) {
+                shouldStopPolling = true;
+              }
+              showPrinterSection(true);
+            } else if (emailTextArea) {
+              emailTextArea.value = "";
+              customMessageTouched = false;
+              updateEmailDeliveryStatus("");
+              showPrinterSection(false);
+            }
+            if (data.elapsed_display) {
+              metaText = `総経過時間: ${data.elapsed_display}`;
+            }
+          } else {
+            if (downloadLink) {
+              downloadLink.hidden = true;
+              downloadLink.style.display = "none";
+              downloadLink.textContent = "";
+              downloadLink.removeAttribute("href");
+              downloadLink.removeAttribute("download");
+            }
+            if (emailSection) {
+              emailSection.hidden = true;
+            }
+            if (emailTextArea) {
+              emailTextArea.value = "";
+              customMessageTouched = false;
+            }
+            selectedRecipients = [];
+            updateRecipientSummary();
+            currentReportNumber = "";
+            sendingEmail = false;
+            hasManualSendAttempt = false;
+            resendConfirmationRequired = false;
+            manualSendCompleted = false;
+            updateEmailDeliveryStatus("");
+            updateSendButtonVisibility();
+            setEmailFeedback("");
+            showPrinterSection(false);
+          }
+
+          if (timestampElement) {
+            if (metaText) {
+              timestampElement.textContent = metaText;
+              timestampElement.hidden = false;
+            } else {
+              timestampElement.textContent = "";
+              timestampElement.hidden = true;
+            }
+          }
+
+          consecutiveNetworkErrors = 0; // 正常応答が返ればエラーカウンタをリセット
+          if (shouldStopPolling || data.status === "failed") {
+            return; // 意図的停止（完了/失敗）
+          }
+        } catch (error) {
+          // AbortError は想定内（タイムアウト再試行）なのでユーザーに見せない
+          if (error && (error.name === 'AbortError' || String(error).includes('AbortError'))) {
+            // 何も表示しない（静かに再試行）
+          } else {
+            // ネットワーク不調等の場合は穏当なメッセージに留める
+            consecutiveNetworkErrors += 1;
+            const messageElement = document.getElementById("message");
+            if (messageElement) {
+              messageElement.textContent = "接続が不安定です。再試行中…";
+              messageElement.hidden = false;
+            }
+          }
+        } finally {
+          clearTimeout(timeoutId);
+          isRefreshing = false;
+        }
+        setTimeout(refreshStatus, 500); // 500ms間隔（0.5秒）に変更
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.origin !== window.location.origin) {
+          return;
+        }
+        if (event.data && event.data.type === "recipients-selected") {
+          const list = Array.isArray(event.data.recipients) ? event.data.recipients : [];
+          selectedRecipients = list
+            .filter((item) => item && typeof item === "object" && item.email)
+            .map((item) => ({
+              email: item.email,
+              name: item.name || item.email,
+              team: item.team || "",
+              preferred: item.preferred || "",
+            }));
+          updateRecipientSummary();
+          updateSendButtonVisibility();
+        }
+      });
+
+      refreshStatus();
+    </script>
+  </body>
+</html>
+
+

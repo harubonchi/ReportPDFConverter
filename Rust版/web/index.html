@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Report PDF Converter (Rust)</title>
+  <style>
+    :root {
+      --bg: #f3f6fa;
+      --surface: #ffffff;
+      --ink: #12223a;
+      --muted: #5f6f87;
+      --brand: #0059b8;
+      --brand-2: #0088c2;
+      --danger: #b03030;
+      --ok: #157145;
+      --border: #d6dfeb;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Yu Gothic UI", "Meiryo", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 800px at 5% -10%, #d7e8ff 0%, transparent 55%),
+        radial-gradient(1200px 800px at 95% 110%, #dff6ff 0%, transparent 55%),
+        var(--bg);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .wrap {
+      max-width: 920px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      box-shadow: 0 8px 20px rgba(10, 36, 80, 0.06);
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      margin: 0 0 6px;
+      letter-spacing: 0.2px;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    form, .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 700px) {
+      .row { grid-template-columns: 1fr; }
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    input[type="file"],
+    input[type="text"],
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font: inherit;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    }
+
+    button.secondary {
+      background: #3d4e68;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin: 0;
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #f9fbff;
+      color: var(--muted);
+      white-space: pre-wrap;
+      word-break: break-word;
+      min-height: 3.4em;
+    }
+
+    .status.ok { border-color: #bfe3cf; color: var(--ok); background: #f3fcf7; }
+    .status.ng { border-color: #e7c5c5; color: var(--danger); background: #fff7f7; }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .muted { color: var(--muted); font-size: 0.87rem; }
+
+    a.download {
+      color: var(--brand);
+      font-weight: 700;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>Report PDF Converter (Rust版)</h1>
+      <p class="lead">ZIPをアップロードすると、Word(.doc/.docx)をPDF化して結合します。Windows + Microsoft Word 前提です。</p>
+    </section>
+
+    <section class="card">
+      <form id="uploadForm">
+        <label>
+          ZIPファイル
+          <input id="zipFile" type="file" name="zip_file" accept=".zip" required />
+        </label>
+        <div class="actions">
+          <button id="startBtn" type="submit">変換開始</button>
+          <span class="muted">処理中はステータスを自動更新します。</span>
+        </div>
+      </form>
+      <p id="statusText" class="status">待機中</p>
+      <div class="actions">
+        <a id="downloadLink" class="download" href="#" hidden>結合PDFをダウンロード</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="grid">
+        <div class="row">
+          <label>
+            プリンタ
+            <select id="printerSelect"></select>
+          </label>
+          <div class="actions" style="align-self: end;">
+            <button id="reloadPrintersBtn" type="button" class="secondary">プリンタ再読込</button>
+            <button id="printBtn" type="button">印刷</button>
+          </div>
+        </div>
+        <p class="muted">PDFビューア依存で印刷処理が遅れる場合があります。</p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="grid">
+        <div class="row">
+          <label>
+            To（カンマ区切り）
+            <input id="toInput" type="text" placeholder="example1@domain.com, example2@domain.com" />
+          </label>
+          <label>
+            Cc（任意, カンマ区切り）
+            <input id="ccInput" type="text" placeholder="cc1@domain.com" />
+          </label>
+        </div>
+        <label>
+          件名
+          <input id="subjectInput" type="text" value="報告書PDF" />
+        </label>
+        <label>
+          本文
+          <textarea id="bodyInput">報告書PDFを送付します。ご確認ください。</textarea>
+        </label>
+        <div class="actions">
+          <button id="sendMailBtn" type="button">メール送信</button>
+          <span class="muted">SMTP_* 環境変数が必要です。</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let currentJobId = null;
+    let pollTimer = null;
+
+    const uploadForm = document.getElementById("uploadForm");
+    const zipFile = document.getElementById("zipFile");
+    const startBtn = document.getElementById("startBtn");
+    const statusText = document.getElementById("statusText");
+    const downloadLink = document.getElementById("downloadLink");
+
+    const printerSelect = document.getElementById("printerSelect");
+    const reloadPrintersBtn = document.getElementById("reloadPrintersBtn");
+    const printBtn = document.getElementById("printBtn");
+
+    const toInput = document.getElementById("toInput");
+    const ccInput = document.getElementById("ccInput");
+    const subjectInput = document.getElementById("subjectInput");
+    const bodyInput = document.getElementById("bodyInput");
+    const sendMailBtn = document.getElementById("sendMailBtn");
+
+    function setStatus(message, mode = "") {
+      statusText.textContent = message;
+      statusText.classList.remove("ok", "ng");
+      if (mode) statusText.classList.add(mode);
+    }
+
+    function splitEmails(raw) {
+      return raw
+        .split(",")
+        .map(v => v.trim())
+        .filter(Boolean);
+    }
+
+    async function fetchJson(url, options) {
+      const res = await fetch(url, options);
+      const text = await res.text();
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch (_) {}
+      if (!res.ok) {
+        throw new Error(payload.error || `HTTP ${res.status}`);
+      }
+      return payload;
+    }
+
+    async function loadPrinters() {
+      try {
+        const payload = await fetchJson("/api/printers");
+        const printers = payload.printers || [];
+        printerSelect.innerHTML = "";
+
+        if (!printers.length) {
+          const opt = document.createElement("option");
+          opt.value = "";
+          opt.textContent = "利用可能なプリンタが見つかりません";
+          printerSelect.appendChild(opt);
+          return;
+        }
+
+        for (const p of printers) {
+          const opt = document.createElement("option");
+          opt.value = p.name;
+          opt.textContent = p.is_default ? `${p.name} (既定)` : p.name;
+          printerSelect.appendChild(opt);
+        }
+      } catch (err) {
+        setStatus(`プリンタ取得失敗: ${err.message}`, "ng");
+      }
+    }
+
+    async function pollStatus(jobId) {
+      try {
+        const job = await fetchJson(`/api/status/${jobId}`);
+        const line = `[${job.status}] ${job.message}` + (job.error ? `\n${job.error}` : "");
+
+        if (job.status === "completed") {
+          setStatus(line, "ok");
+          downloadLink.hidden = false;
+          downloadLink.href = `/download/${jobId}`;
+          clearInterval(pollTimer);
+          pollTimer = null;
+          startBtn.disabled = false;
+          return;
+        }
+
+        if (job.status === "failed") {
+          setStatus(line, "ng");
+          clearInterval(pollTimer);
+          pollTimer = null;
+          startBtn.disabled = false;
+          return;
+        }
+
+        setStatus(line);
+      } catch (err) {
+        setStatus(`ステータス取得失敗: ${err.message}`, "ng");
+      }
+    }
+
+    uploadForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      if (!zipFile.files?.length) {
+        setStatus("ZIPファイルを選択してください。", "ng");
+        return;
+      }
+
+      startBtn.disabled = true;
+      downloadLink.hidden = true;
+      currentJobId = null;
+      setStatus("アップロード中...");
+
+      try {
+        const form = new FormData();
+        form.append("zip_file", zipFile.files[0]);
+        const payload = await fetchJson("/api/process", { method: "POST", body: form });
+
+        currentJobId = payload.job_id;
+        setStatus(`ジョブを開始しました: ${currentJobId}`);
+
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        await pollStatus(currentJobId);
+        pollTimer = setInterval(() => pollStatus(currentJobId), 2000);
+      } catch (err) {
+        setStatus(`開始失敗: ${err.message}`, "ng");
+        startBtn.disabled = false;
+      }
+    });
+
+    reloadPrintersBtn.addEventListener("click", loadPrinters);
+
+    printBtn.addEventListener("click", async () => {
+      if (!currentJobId) {
+        setStatus("先に変換を完了してください。", "ng");
+        return;
+      }
+
+      const printer = printerSelect.value;
+      if (!printer) {
+        setStatus("プリンタを選択してください。", "ng");
+        return;
+      }
+
+      try {
+        await fetchJson(`/api/print/${currentJobId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ printer_name: printer }),
+        });
+        setStatus(`印刷命令を送信しました: ${printer}`, "ok");
+      } catch (err) {
+        setStatus(`印刷失敗: ${err.message}`, "ng");
+      }
+    });
+
+    sendMailBtn.addEventListener("click", async () => {
+      if (!currentJobId) {
+        setStatus("先に変換を完了してください。", "ng");
+        return;
+      }
+
+      const to = splitEmails(toInput.value);
+      const cc = splitEmails(ccInput.value);
+      if (!to.length) {
+        setStatus("Toを1件以上入力してください。", "ng");
+        return;
+      }
+
+      try {
+        await fetchJson(`/api/email/${currentJobId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to,
+            cc,
+            subject: subjectInput.value,
+            body: bodyInput.value,
+          }),
+        });
+        setStatus("メール送信に成功しました。", "ok");
+      } catch (err) {
+        setStatus(`メール送信失敗: ${err.message}`, "ng");
+      }
+    });
+
+    loadPrinters();
+  </script>
+</body>
+</html>

@@ -836,7 +836,7 @@
         sendingEmail = true;
         updateEmailDeliveryStatus("sending");
         updateSendButtonVisibility();
-        setEmailFeedback("メール送信処理を開始しました。送信完了までお待ちください。", "");
+        setEmailFeedback("", "");
 
         try {
           const response = await fetch(`/send-email/${encodeURIComponent(jobId)}`, {
